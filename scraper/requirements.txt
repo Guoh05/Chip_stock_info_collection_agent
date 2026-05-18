@@ -1,0 +1,16 @@
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=5.0
+trafilatura>=1.12
+playwright>=1.45
+playwright-stealth>=2.0
+scrapy>=2.11
+pyyaml>=6.0
+curl_cffi>=0.7
+
+# Jupyter (interactive notebooks)
+jupyter>=1.1
+jupyterlab>=4.5
+notebook>=7.5
+ipykernel>=7.0
+ipywidgets>=8.1

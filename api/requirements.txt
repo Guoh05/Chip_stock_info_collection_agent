@@ -1,0 +1,12 @@
+# Distributor API track dependencies.
+# Shares the project root .venv/. Install with:
+#   .venv/Scripts/pip install -r api/requirements.txt
+
+requests>=2.31
+python-dotenv>=1.0       # for loading .env without committing keys
+openpyxl>=3.1            # read input .xlsx chip list, write output .xlsx index/compare
+
+# Optional vendor SDKs — uncomment as you adopt each:
+# digikey-api>=0.4         # Digikey official SDK
+# mouser-api>=0.1          # unofficial wrapper (Mouser has REST without SDK)
+# nexar-client>=1.0        # Octopart / Nexar

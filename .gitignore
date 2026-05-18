@@ -1,0 +1,47 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Virtual environment ---
+.venv/
+venv/
+env/
+
+# --- Secrets / local config ---
+.env
+.env.*
+*.env
+api/.env
+scraper/.env
+common/.env
+
+# --- Run output (per CLAUDE.md: test/ is generated dev output) ---
+test/
+temp/
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# --- Claude Code local-only ---
+.claude/settings.local.json
+.claude/.session*
+.claude/projects/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Build / dist ---
+build/
+dist/
+*.log
