@@ -11,6 +11,16 @@
             "timeout": 20
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".venv/Scripts/python.exe .claude/hooks/check_merge_doc_sync.py",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }

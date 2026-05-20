@@ -297,25 +297,31 @@ def normalize_next(data: dict) -> dict:
     lead_time = po.get("standardLeadTime")
     is_back_order_allowed = data.get("isBackOrderAllowed")
 
-    # Stock breakdown — unify Digikey's "stock + factory lead time" model into
-    # the same 现货/期货 (or 在途) schema we use for LCSC. Digikey doesn't have
-    # an in-transit pool; instead, any qty beyond `qtyAvailable` ships against
-    # the manufacturer's factory lead time (`standardLeadTime`). We model that
-    # as the "期货" (futures / factory order) row.
+    # Stock breakdown — only emit fields the page actually shows.
+    # Audited 2026-05-19 against digikey.cn product page:
+    #   • "DigiKey 美国仓"        — NOT on page (only a CMS tooltip string
+    #                               "预计美国仓库发货日期" — not a warehouse name)
+    #   • "下单后立即发货"          — NOT on page (only meta-description SEO
+    #                               text "立即购买，当天发货")
+    #   • "工厂期货"               — NOT on page (the word 工厂 appears only
+    #                               in unrelated nav menu category links)
+    #   • "原厂标准交货期 N 周"     — REAL (visible in the product info table)
+    #
+    # Per the "no fabricated labels" rule we now emit:
+    #   • A single 现货 row when qty_available > 0, warehouse left blank
+    #     (Digikey does not publish a per-warehouse name on the .cn page).
+    #   • No 期货 / lead-time row — the row label and the implied "qty=unbounded"
+    #     semantics are scraper interpretation, not page truth. The literal
+    #     "原厂标准交货期 N 周" string is still preserved in `site_*`/`lead_time`
+    #     fields below for downstream that knows what it means; just not
+    #     dressed up as a warehouse row here.
     stock_breakdown: list[dict] = []
     if qty_available:
         stock_breakdown.append({
             "label": "现货",
-            "warehouse": "DigiKey 美国仓",
+            "warehouse": None,         # page does not name a warehouse
             "quantity": qty_available,
-            "ship_text": "下单后立即发货",
-        })
-    if is_back_order_allowed and lead_time:
-        stock_breakdown.append({
-            "label": "期货",
-            "warehouse": "工厂期货",
-            "quantity": None,  # unbounded — factory order
-            "ship_text": f"原厂标准交货期 {lead_time}",
+            "ship_text": None,          # page does not name a ship SLA
         })
 
     out: dict = {
@@ -334,9 +340,12 @@ def normalize_next(data: dict) -> dict:
         "stock_text": pq.get("qtyAvailable"),
         # Stock breakdown rows — same schema as LCSC for cross-channel uniformity
         "stock_now_qty": qty_available,
-        "stock_now_ship_text": "下单后立即发货" if qty_available else None,
+        # ship_text fields left blank — see stock_breakdown rationale above.
+        # The factory lead time itself is still preserved in `lead_time`
+        # above (the raw `standardLeadTime` from Digikey's API).
+        "stock_now_ship_text": None,
         "stock_future_qty": None,
-        "stock_future_ship_text": (f"原厂标准交货期 {lead_time}" if (is_back_order_allowed and lead_time) else None),
+        "stock_future_ship_text": None,
         "stock_breakdown": stock_breakdown,
         "has_lead_time": pq.get("hasLeadTime"),
         "min_order_qty": (pq.get("pricing") or [{}])[0].get("minOrderQuantity") if pq.get("pricing") else None,

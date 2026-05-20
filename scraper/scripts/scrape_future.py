@@ -333,13 +333,23 @@ JS_DETAIL_EXTRACT = r"""
 
 
 def _parse_qty(s):
+    """Parse a Future stock-quantity string.
+
+    Returns None for any value the site does not unambiguously expose:
+    - missing label (None)
+    - non-numeric ("-", "—", "N/A")
+    - negative (Future occasionally renders "-1" for "unknown / not loaded";
+      this looked like real data and produced bogus rows like
+      `Factory Stock -1`, so treat as unknown rather than -1.)
+    """
     if s is None:
         return None
     s = str(s).replace(",", "").strip()
     try:
-        return int(s)
+        v = int(s)
     except (ValueError, TypeError):
         return None
+    return v if v >= 0 else None
 
 
 def attempt_playwright_search(part: str, out_dir: Path) -> dict:
@@ -399,12 +409,48 @@ def attempt_playwright_search(part: str, out_dir: Path) -> dict:
 
             rec["outcome"] = "ok" if variants else "no_variants_found"
 
+            # Dismiss Future's cookie consent banner once per context. The banner
+            # has buttons "Allow all cookies" / "Customize" / etc. If left on
+            # screen it overlays the lower-right Pricing/Stock panel — the JS
+            # extract still works (it reads body innerText, not visual layout)
+            # but `_product.png` screenshots end up with the banner covering
+            # the data the user needs to verify against.
+            for sel in [
+                "button:has-text('Allow all cookies')",
+                "button:has-text('Accept All')",
+                "button:has-text('Accept all')",
+                "button:has-text('Allow All')",
+                "#onetrust-accept-btn-handler",
+            ]:
+                try:
+                    btn = page.query_selector(sel)
+                    if btn:
+                        btn.click(timeout=2_000)
+                        page.wait_for_timeout(500)
+                        print(f"[future] dismissed cookie banner via {sel}")
+                        break
+                except Exception:
+                    continue
+
             # Now visit each detail page in the same context
             for v in variants[:TOP_N_VARIANTS]:
                 print(f"[future]   detail {v['mpn']}: {v['detail_url']}")
                 try:
                     page.goto(v["detail_url"], wait_until="domcontentloaded", timeout=60_000)
                     page.wait_for_timeout(8_000)
+                    # Banner may re-appear after navigation — dismiss again,
+                    # silently this time.
+                    for sel in ["button:has-text('Allow all cookies')",
+                                "button:has-text('Accept All')",
+                                "#onetrust-accept-btn-handler"]:
+                        try:
+                            btn = page.query_selector(sel)
+                            if btn:
+                                btn.click(timeout=1_500)
+                                page.wait_for_timeout(300)
+                                break
+                        except Exception:
+                            continue
                     # Wait for Pricing Section to appear
                     try:
                         page.wait_for_function(
@@ -461,17 +507,27 @@ def normalize_variant(v: dict) -> dict:
     factory_stock = _parse_qty(raw.get("factory_stock"))
     factory_lead_time = raw.get("factory_lead_time")  # e.g. "4 Weeks"
 
-    # Build the canonical stock_breakdown
+    # Build the canonical stock_breakdown.
+    # Only emit a row when the value is a non-negative integer — i.e. the
+    # page clearly showed a number. Missing labels (None) mean the data
+    # wasn't visible (often because a cookie banner covered the section)
+    # and emitting a placeholder row would be a fabrication.
     stock_breakdown: list[dict] = []
-    # Future's own "Global Stock" = stock_now (ships immediately when > 0)
-    stock_breakdown.append({
-        "label": "Global Stock",
-        "warehouse": "Future Electronics (global)",
-        "quantity": global_stock,
-        "ship_text": "Ships immediately" if global_stock and global_stock > 0 else "Out of stock at Future",
-        "note": "Future's own inventory visible globally — interpretation: this is 现货 (in-stock).",
-    })
-    if region_label and region_stock is not None:
+    if isinstance(global_stock, int) and global_stock >= 0:
+        stock_breakdown.append({
+            "label": "Global Stock",
+            "warehouse": "Future Electronics (global)",
+            "quantity": global_stock,
+            "ship_text": "Ships immediately" if global_stock > 0 else "Out of stock at Future",
+            "note": "Future's own inventory visible globally — interpretation: this is 现货 (in-stock).",
+        })
+    # Per-user-rule 2026-05-19: drop "Future Electronics (Singapore)" — the
+    # APAC site always reports Singapore as the region, and its quantity is
+    # a slice of Global Stock (same number, double-counted on naive SUM).
+    # Skip Singapore unconditionally; reserve the branch for future support
+    # of other regional breakdowns.
+    if region_label and region_label.lower() != "singapore" \
+            and isinstance(region_stock, int) and region_stock >= 0:
         stock_breakdown.append({
             "label": f"{region_label} stock",
             "warehouse": f"Future Electronics ({region_label})",
@@ -479,7 +535,11 @@ def normalize_variant(v: dict) -> dict:
             "ship_text": f"Local {region_label} warehouse" if region_stock > 0 else "Out of stock at this region",
             "note": "Per-region slice of Global Stock (this scraper used the APAC site).",
         })
-    if on_order is not None:
+    # Only emit On Order / Factory Stock rows when the value is a non-negative
+    # integer — i.e. the site clearly showed a number. We previously emitted
+    # rows with quantity=None / -1 (parse failures) which the user reasonably
+    # read as "claimed but not visible on the page".
+    if isinstance(on_order, int) and on_order >= 0:
         stock_breakdown.append({
             "label": "On Order",
             "warehouse": "Future Electronics (incoming)",
@@ -487,7 +547,7 @@ def normalize_variant(v: dict) -> dict:
             "ship_text": "On order — already reserved",
             "note": "Stock Future has on order; not immediately shippable to new orders.",
         })
-    if factory_stock is not None:
+    if isinstance(factory_stock, int) and factory_stock >= 0:
         # Prefer the literal site note captured from the page when available
         site_note = raw.get("factory_stock_site_note") or (
             "Inventory held at our manufacturer's warehouse. "

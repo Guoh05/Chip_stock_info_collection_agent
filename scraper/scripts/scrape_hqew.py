@@ -44,7 +44,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
 CHANNEL = "HQEW"
 SEARCH_BASE = "https://s.hqew.com"
-TOP_N_LISTINGS = 30  # cap on supplier rows kept in `stock_breakdown` + JSON
+TOP_N_LISTINGS = 5  # cap on supplier rows kept in `stock_breakdown` + JSON (top-5 by stock)
 
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -258,8 +258,14 @@ def _build_breakdown_row(l: dict) -> dict:
 
 
 def _normalize_variant(variant_mpn: str, variant_listings: list[dict]) -> dict:
-    """Build a per-MPN-variant record from its supplier listings."""
-    top = variant_listings[:TOP_N_LISTINGS]
+    """Build a per-MPN-variant record from its supplier listings.
+
+    Listings are sorted by quantity (descending) before taking the top-N so
+    the `stock_breakdown` reflects the highest-stock distributors, not just
+    whoever happened to appear first in the search-results HTML order.
+    """
+    ranked = sorted(variant_listings, key=lambda l: (l.get("quantity") or 0), reverse=True)
+    top = ranked[:TOP_N_LISTINGS]
     sum_qty = sum((l.get("quantity") or 0) for l in top)
     breakdown = [_build_breakdown_row(l) for l in top]
 
@@ -313,8 +319,13 @@ def normalize(pw_rec: dict, mpn: str) -> dict:
     )
     variants = [_normalize_variant(m, ls) for m, ls in sorted_variants]
 
-    # Aggregate combined fields (across all variants, all top-N rows)
-    all_top = [l for v in variants for l in v["listings"]]
+    # Aggregate combined fields. The top-level `stock_breakdown` reflects the
+    # overall top-N suppliers across all MPN variants — cap at TOP_N_LISTINGS
+    # globally (not per-variant) so the chip-level view is a clean top-5
+    # snapshot regardless of how many variants HQEW's fuzzy search returned.
+    all_listings = [l for v in variants for l in v["listings"]]
+    all_listings.sort(key=lambda l: (l.get("quantity") or 0), reverse=True)
+    all_top = all_listings[:TOP_N_LISTINGS]
     sum_qty_all = sum((l.get("quantity") or 0) for l in all_top)
     combined_breakdown = [_build_breakdown_row(l) for l in all_top]
 

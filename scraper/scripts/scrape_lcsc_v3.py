@@ -92,10 +92,17 @@ RIGHT_PANEL_SCRIPT = """
 
     const tier_panel = find_anc('梯度');
     const stock_panel = find_anc('库存总量');
+    // Visible MOQ — LCSC's product UI shows "起订量：N 个" near the
+    // "购买数量" input. This is the buyer-facing minimum (often a multiple
+    // of the API's minBuyNumber field, e.g. minBuyNumber=1 but 起订量=5).
+    let order_qty_text = null;
+    const moqMatch = body.match(/起订量[：:]\s*([\d,]+)\s*个/);
+    if (moqMatch) order_qty_text = moqMatch[1];
     return {
         skeleton_count: skel,
         tier_text: tier_panel ? tier_panel.innerText : null,
         stock_text: stock_panel ? stock_panel.innerText : null,
+        order_qty_text: order_qty_text,
     };
 }
 """
@@ -318,34 +325,32 @@ def normalize(pp: dict, item_id: str, item_url: str, right_panel: dict | None = 
     ship_now = dom_stock.get("stock_now_ship_text") or SHIP_TEXT_GD
     ship_transit = dom_stock.get("stock_transit_ship_text") or SHIP_TEXT_TRANSIT
 
+    # stock_breakdown reflects what the page actually shows. LCSC's product
+    # UI displays a single aggregate "现货 N" number — the per-warehouse split
+    # (gdWarehouseStockNumber / jsWarehouseStockNumber) and the SMT subsidy
+    # bucket (smtStockNumber) are API-internal fields, not labelled on the
+    # page. Surfacing them as `warehouse: "广东仓"` / `warehouse: "SMT扩展库"`
+    # rows made the summary look like UI scraping that the user couldn't
+    # verify against the screenshot. Per the "uncertain → blank, don't
+    # invent UI" rule, we now emit:
+    #   • one "现货" row (no warehouse label) when stock_now > 0
+    #   • one "在途" row only when the page actually shows the 在途 number
+    # The raw per-warehouse numbers remain available as site_* fields below.
     stock_breakdown = []
-    if gd_stock:
+    stock_now_total = (gd_stock or 0) + (js_stock or 0)
+    if stock_now_total > 0:
         stock_breakdown.append({
             "label": "现货",
-            "warehouse": "广东仓",
-            "quantity": gd_stock,
-            "ship_text": ship_now,
-        })
-    if js_stock:
-        stock_breakdown.append({
-            "label": "现货",
-            "warehouse": "江苏仓",
-            "quantity": js_stock,
+            "warehouse": None,   # LCSC UI does not label a warehouse here
+            "quantity": stock_now_total,
             "ship_text": ship_now,
         })
     if display_transit and transit:
         stock_breakdown.append({
             "label": "在途",
-            "warehouse": "在途仓",
+            "warehouse": None,
             "quantity": transit,
             "ship_text": ship_transit,
-        })
-    if smt_stock and smt_stock != gd_stock:
-        stock_breakdown.append({
-            "label": "SMT扩展库",
-            "warehouse": "SMT扩展库",
-            "quantity": smt_stock,
-            "ship_text": SHIP_TEXT_SMT,
         })
 
     # Datasheet URL
@@ -397,6 +402,13 @@ def normalize(pp: dict, item_id: str, item_url: str, right_panel: dict | None = 
         "min_whole_number": pr.get("minWholeNumber"),
         "min_packet_unit": pr.get("productMinEncapsulationUnit"),
         "min_packet_number": pr.get("productMinEncapsulationNumber"),
+        # Visible-on-page 起订量 N 个 — often a stricter / pack-aligned
+        # minimum than minBuyNumber. The page-text wins for buyer reality;
+        # keep both for transparency.
+        "min_order_qty": (
+            int((right_panel or {}).get("order_qty_text").replace(",", ""))
+            if right_panel and right_panel.get("order_qty_text") else pr.get("minBuyNumber")
+        ),
         "encap_price": pr.get("encaptionPrice"),
         "unit_price_cny": pp.get("price"),
         "is_rohs": wd.get("rohsLabal"),

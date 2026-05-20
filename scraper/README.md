@@ -4,29 +4,37 @@ Track 1 of the chip-availability pipeline. Drives distributor websites with `cur
 
 <!-- BEGIN AUTO:status — managed by scraper/scripts/_update_readme_status.py (see "Auto-updating this README" at bottom) -->
 
-## Status snapshot (2026-05-18)
+## Status snapshot (2026-05-20)
 
 | Channel | Method | Working? |
 |---|---|---|
-| **LCSC** (szlcsc.com) | Playwright Chromium `--headless=new` + `__NEXT_DATA__` + DOM right-panel | ✅ |
-| **Digikey** (digikey.cn) | Playwright stealth Chromium + `__NEXT_DATA__` envelope | ✅ |
-| **HQEW** (华强电子网, hqew.com) | Playwright Chromium + supplier-table DOM scrape | ✅ |
-| **Future** (futureelectronics.com) | Playwright **Firefox** (Akamai HTTP/2 bypass) | ✅ |
-| Mouser (mouser.cn) | curl_cffi cascade — blocked by Akamai BotManager `bm-verify` | ❌ |
-| Arrow (arrow.com) | curl_cffi cascade — blocked by Akamai BotManager `_abck` | ❌ |
+| **LCSC** (立创商城, szlcsc.com) | Playwright Chromium `--headless=new` + `__NEXT_DATA__` + DOM right-panel | ✅ |
+| **Digikey** (得捷电子, digikey.cn) | Playwright stealth Chromium + `__NEXT_DATA__` envelope | ✅ |
+| **HQEW** (华强电子网, hqew.com) | Playwright Chromium + supplier-table DOM scrape (top-5 per chip) | ✅ |
+| **Future** (Future Electronics, futureelectronics.com) | Playwright **Firefox** (Akamai HTTP/2 bypass) + cookie-banner dismiss | ✅ |
+| **RSONLINE** (RS 欧时, rsonline.cn) | curl_cffi + Next.js `__NEXT_DATA__` + Adobe data-layer `stockinfo` | ✅ |
+| **ONEYAC** (唯样商城, oneyac.com) | Playwright Firefox + main-product card extraction (not recommended-carousel) | ✅ |
+| **ICKEY** (云汉芯城, ickey.cn) | Playwright Chromium + doT.js template hydration wait (marketplace aggregator) | ✅ |
+| **Rochester** (Rochester Electronics, rocelec.com) | Playwright Firefox + LWC hydration + exact-MPN guard (EOL-only) | ✅ |
+| Mouser (贸泽, mouser.cn / .com) | Blocked by Akamai BotManager `bm-verify` — use api/scripts/api_mouser.py instead | ❌ |
+| Arrow (艾睿, arrow.com) | Blocked by Akamai BotManager `_abck` — use api/scripts/api_arrow.py (key pending) | ❌ |
 
-**Latest batch run:** `test/scraper_test/BatchTest_20260518_11_25_53/` — 3 MPNs × 4 channel(s) = 12 calls.
+**Latest batch run:** `test/scraper_test/BatchTest_20260520_07_40_03/` — 103 MPNs × 8 source(s) = 824 cells.
 
 | Channel | OK | No results | Blocked | Failed | OK % |
 |---|---|---|---|---|---|
-| LCSC | 3 | 0 | 0 | 0 | 100.0 % |
-| Digikey | 3 | 0 | 0 | 0 | 100.0 % |
-| HQEW | 3 | 0 | 0 | 0 | 100.0 % |
-| Future | 3 | 0 | 0 | 0 | 100.0 % |
+| LCSC | 81 | 22 | 0 | 0 | 78.6 % |
+| Digikey | 57 | 0 | 3 | 43 | 55.3 % |
+| HQEW | 85 | 18 | 0 | 0 | 82.5 % |
+| Future | 52 | 51 | 0 | 0 | 50.5 % |
+| RS Online | 29 | 74 | 0 | 0 | 28.2 % |
+| Oneyac | 51 | 52 | 0 | 0 | 49.5 % |
+| ICKEY | 83 | 20 | 0 | 0 | 80.6 % |
+| Rochester | 9 | 94 | 0 | 0 | 8.7 % |
 
-Cross-channel coverage: **3** chip(s) returned ok on all 4 channels.
+Cross-source coverage: **1** chip(s) returned ok on all 8 sources; 16 on 7; 20 on 6; 6 on 5; 21 on 4; 22 on 3; 11 on 2; 5 on 1; 1 on none.
 
-No manufacturer-name mismatches in the latest run.
+**Manufacturer-name mismatches surfaced:** 55 — `ATXMEGA32E5-ANR` (ONEYAC: MICROCHIP → 唯样海外代购), `HT66F017-HF` (ICKEY: HOLTEK → HONGFA/厦门宏发), `Z0103MN,135` (ONEYAC: WEEN → STMicro), `B32933A3334K3` (HQEW: TDK → EPCOS), `CY8C21434-24LQXIT` (HQEW: INFINEON → CYPRESS), and 50 more.
 
 <!-- END AUTO:status -->
 
@@ -38,6 +46,9 @@ No manufacturer-name mismatches in the latest run.
 .venv/Scripts/python.exe scraper/scripts/scrape_digikey.py STM32G030F6P6
 .venv/Scripts/python.exe scraper/scripts/scrape_hqew.py STM32G030F6P6
 .venv/Scripts/python.exe scraper/scripts/scrape_future.py "ATXMEGA32E5-ANR"
+.venv/Scripts/python.exe scraper/scripts/scrape_rsonline.py LIS2DH12TR
+.venv/Scripts/python.exe scraper/scripts/scrape_oneyac.py LIS2DH12TR
+.venv/Scripts/python.exe scraper/scripts/scrape_ickey.py STM32F103C8T6
 ```
 
 Each run writes a folder under `test/scraper_test/Test_<MPN>_<CHANNEL>_<YYYYMMDD>_<HH>_<MM>_<SS>/`.
@@ -90,6 +101,9 @@ First full sweep ran 2026-05-17 (103 chips × 4 channels, 208 min elapsed): LCSC
 | `scrape_digikey.py` | digikey.cn | Playwright stealth Chromium + `__NEXT_DATA__` envelope | ✅ |
 | `scrape_hqew.py` | hqew.com | Playwright Chromium + supplier table scrape | ✅ |
 | `scrape_future.py` | futureelectronics.com | Playwright **Firefox** (Akamai-HTTP/2 bypass) | ✅ |
+| `scrape_rsonline.py` | rsonline.cn (RS 欧时) | curl_cffi + Next.js `__NEXT_DATA__` (Schema.org Product) | ✅ |
+| `scrape_oneyac.py` | oneyac.com (唯样商城) | Playwright Firefox + tier-table extraction from first product card | ✅ |
+| `scrape_ickey.py` | ickey.cn (云汉芯城) | Playwright Chromium (search hydrates via XHR) → per-supplier `/detail/<sku>/<MPN>.html` | ✅ |
 | `batch_scraper_test.py` | — | Driver: subprocess per (MPN × channel), hard timeouts, consolidated CSV/XLSX/MD outputs | ✅ |
 | `scrape_mouser_v2.py` | mouser.cn | curl_cffi cascade — blocked by Akamai bm-verify | ❌ |
 | `scrape_arrow_v2.py` | arrow.com | curl_cffi cascade — blocked by Akamai _abck | ❌ |
@@ -109,6 +123,25 @@ from _summary import write_summary
 
 - `doc/batch_output_schema.md` — data contract for `batch_index.csv/.xlsx`, `batch_compare.csv/.xlsx`, `batch_index.json`, and per-MPN folder layout. **Read this first if you're parsing batch output.**
 - `doc/scraper_report_v2.md` — per-channel findings, blockers, lessons learned (v1 retained for history).
+
+## Rule — new-source feasibility tests MUST reach the product detail page
+
+When evaluating whether a new distributor source is scrapable, the test must navigate **search → click first matching result → product detail page** and demonstrate that canonical-schema fields (`manufacturer_part_number`, `manufacturer`, `stock_now_qty`, `stock_now_ship_text`, `stock_future_qty`, `stock_future_ship_text`, `stock_breakdown`, `prices`, `parameters`, `datasheet_url`, `lifecycle_status`, `package`) are recoverable from that detail HTML.
+
+Stopping at the search page is **not enough**. The search page alone doesn't reveal:
+- whether per-supplier prices / stock are visible vs. login-gated,
+- whether spec parameters are exposed at all,
+- whether the detail URL pattern is stable / scrapable,
+- whether the page needs JS hydration / cookie consent / WAF bypass.
+
+Every per-source probe folder must therefore include `_product.html` + `_product.png` (the **detail** page, not just `_search.*`) plus an `extracted.json` or `extracted_canonical.json` showing recoverable schema fields. If a probe can only get to the search page, document the specific blocker (WAF, no exact match, no detail URL pattern) and retry with a chip more likely to be in catalog.
+
+Reference probes that meet this bar:
+- `test/scraper_test/Test_BTA316-600E_127_ROCHESTER_*_detail/` — full canonical schema, 5 price tiers, datasheet URL, 14 spec fields.
+- `test/scraper_test/Test_LIS2DH12TR_RSONLINE_*_detail/` — `__NEXT_DATA__` carries mpn/brand/stockStatus/displayPrice/breakQty1.
+- `test/scraper_test/Test_LIS2DH12TR_ONEYAC_*_detail/` — rendered detail HTML with title, brand, spec table.
+
+See `_NEW_SOURCES_DETAIL_PROBE_20260518.md` in `test/scraper_test/` for the working template.
 
 ## Deps
 

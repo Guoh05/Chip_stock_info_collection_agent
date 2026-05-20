@@ -44,10 +44,14 @@ VENDOR_STATUS = [
      "not started",
      "OAuth2 (keys not yet acquired)",
      "pending"),
-    ("Element14 / Farnell",
-     "not started",
-     "API key (key not yet acquired)",
-     "pending"),
+    ("**Arrow Electronics** Pricing & Availability v4",
+     "GET api.arrow.com/itemservice/v4/en/search/list",
+     "querystring `login` + `apikey` (BOTH required); same pair also nested in the `req` JSON payload. Inventory is republished across `webSites[].sources[]` so the same physical stock may appear under Verical and Arrow ACNA/EUROPE — dedup by `(fohQty, shipsFrom, shipsIn)` before summing.",
+     "ok"),
+    ("Element14 / Farnell (e络盟)",
+     "GET api.element14.com/catalog/products",
+     "API key in querystring; default store `cn.element14.com`; uses `term=manuPartNum:<MPN>` (NOT `manuPartNumber`); `versionNumber` is NOT a valid param. Lead time `stock.leastLeadTime` is in **days** (not weeks). Quota: 2 req/s, 1,000/day.",
+     "ok"),
 ]
 STATUS_ICON = {"ok": "✅", "pending": "⏳", "blocked": "❌"}
 
@@ -60,10 +64,15 @@ def find_latest_batch() -> Path | None:
 
 
 def parse_batch(batch_dir: Path) -> dict:
-    """Return per-channel counts + cross-channel agreement stats. Empty dict
-    on any read failure (we'd rather render a degraded snapshot than crash)."""
+    """Return per-source counts + dedup'd manufacturer mismatches.
+
+    The post-2026-05-18 `batch_index.csv` has one row per (input_mpn × source ×
+    warehouse), so a chip × source pair contributes multiple rows on success
+    but only one on failure. Dedup by (input_mpn, source) before counting so
+    headline pass-rate stays meaningful. Returns {} on any read failure (we'd
+    rather render a degraded snapshot than crash).
+    """
     idx_path = batch_dir / "batch_index.csv"
-    cmp_path = batch_dir / "batch_compare.csv"
     if not idx_path.exists():
         return {}
     try:
@@ -71,59 +80,47 @@ def parse_batch(batch_dir: Path) -> dict:
             rows = list(csv.DictReader(f))
     except OSError:
         return {}
-    per_ch: dict[str, dict] = {}
-    for r in rows:
-        d = per_ch.setdefault(
-            r["channel"], {"ok": 0, "no_results": 0, "failed": 0, "total": 0}
-        )
-        d["total"] += 1
-        if r["status"] == "ok":
-            d["ok"] += 1
-        elif r["status"] == "no_results":
-            d["no_results"] += 1
-        else:
-            d["failed"] += 1
-    both_ok = stock_both = only_mouser = only_digikey = neither = 0
+    per_src: dict[str, dict] = {}
     mfr_mismatches: list[dict] = []
-    comparisons: list[dict] = []
-    if cmp_path.exists():
-        try:
-            with open(cmp_path, encoding="utf-8-sig") as f:
-                comparisons = list(csv.DictReader(f))
-        except OSError:
-            comparisons = []
-        for c in comparisons:
-            if c.get("mouser_status") == "ok" and c.get("digikey_status") == "ok":
-                both_ok += 1
-                d = c.get("stock_now_disagreement", "")
-                if d == "both_have_stock":
-                    stock_both += 1
-                elif d == "only_mouser":
-                    only_mouser += 1
-                elif d == "only_digikey":
-                    only_digikey += 1
-                else:
-                    neither += 1
-            for ch in ("mouser", "digikey"):
-                if c.get(f"{ch}_status") == "ok" and (
-                    c.get(f"mfr_match_{ch}", "") or ""
-                ).lower() == "false":
-                    mfr_mismatches.append(
-                        {
-                            "mpn": c.get("input_mpn", ""),
-                            "channel": ch.upper(),
-                            "expected": c.get("expected_mfr", ""),
-                            "returned": c.get(f"{ch}_returned_mfr", ""),
-                        }
-                    )
+    seen: set[tuple] = set()
+    seen_mismatch: set[tuple] = set()
+    for r in rows:
+        src = r.get("source", "")
+        mpn = r.get("input_mpn", "")
+        key = (mpn, src)
+        if key in seen:
+            # Skip dup warehouse rows for the same (chip, source) — pass-rate
+            # counts at the chip×source level, not the warehouse level.
+            pass
+        else:
+            seen.add(key)
+            d = per_src.setdefault(
+                src, {"ok": 0, "no_results": 0, "failed": 0, "total": 0}
+            )
+            d["total"] += 1
+            if r["status"] == "ok":
+                d["ok"] += 1
+            elif r["status"] == "no_results":
+                d["no_results"] += 1
+            else:
+                d["failed"] += 1
+        if (
+            r.get("status") == "ok"
+            and (r.get("mfr_match") or "").lower() == "false"
+            and r.get("returned_mfr")
+            and key not in seen_mismatch
+        ):
+            seen_mismatch.add(key)
+            mfr_mismatches.append({
+                "mpn": mpn,
+                "source": src,
+                "expected": r.get("expected_mfr", ""),
+                "returned": r.get("returned_mfr", ""),
+            })
+    n_chips = len({r["input_mpn"] for r in rows})
     return {
-        "n_chips": len(comparisons) or len({r["input_mpn"] for r in rows}),
-        "per_channel": per_ch,
-        "both_ok": both_ok,
-        "stock_both": stock_both,
-        "only_mouser": only_mouser,
-        "only_digikey": only_digikey,
-        "neither": neither,
+        "n_chips": n_chips,
+        "per_channel": per_src,  # kept key name for downstream compat
         "mfr_mismatches": mfr_mismatches,
     }
 
@@ -150,39 +147,38 @@ def render_block(today: str, batch_dir: Path | None, stats: dict) -> str:
     else:
         rel = batch_dir.relative_to(PROJECT_ROOT).as_posix()
         n_chips = stats["n_chips"]
-        total_calls = sum(d["total"] for d in stats["per_channel"].values())
+        total_pairs = sum(d["total"] for d in stats["per_channel"].values())
         out.append(
             f"**Latest batch run:** `{rel}/` — {n_chips} MPNs × "
-            f"{len(stats['per_channel'])} channel(s) = {total_calls} calls."
+            f"{len(stats['per_channel'])} source(s) = {total_pairs} (chip × source) pairs."
         )
         out.append("")
-        out.append("| Channel | OK | No results | Failed | OK % |")
+        out.append("| Source | OK | No results | Failed | OK % |")
         out.append("|---|---|---|---|---|")
-        preferred = ["MOUSER", "DIGIKEY"]
+        # Display-name strings emitted by batch_api_test.py (SOURCE_DISPLAY_NAME).
+        # Keep in sync if either side changes.
+        preferred = [
+            "Mouser_贸泽",
+            "DIGIKEY_得捷电子",
+            "ELEMENT14_e络盟",
+            "ARROW_艾睿",
+            "LCSC_立创商城",
+        ]
         ordered = [c for c in preferred if c in stats["per_channel"]] + sorted(
             c for c in stats["per_channel"] if c not in preferred
         )
-        for ch in ordered:
-            d = stats["per_channel"][ch]
+        for src in ordered:
+            d = stats["per_channel"][src]
             pct = 100.0 * d["ok"] / d["total"] if d["total"] else 0.0
             out.append(
-                f"| {ch.title()} | {d['ok']} | {d['no_results']} | "
+                f"| {src} | {d['ok']} | {d['no_results']} | "
                 f"{d['failed']} | {pct:.1f} % |"
             )
         out.append("")
-        if stats["both_ok"]:
-            out.append(
-                f"Both channels returned a usable result for **{stats['both_ok']}** of "
-                f"the {n_chips} chips. Of those: {stats['stock_both']} have stock at "
-                f"both, {stats['only_digikey']} only at Digikey, "
-                f"{stats['only_mouser']} only at Mouser, "
-                f"{stats['neither']} factory-order at both."
-            )
-            out.append("")
         mm = stats["mfr_mismatches"]
         if mm:
             preview = ", ".join(
-                f"`{m['mpn']}` ({m['channel']}: {m['expected']} → {m['returned']})"
+                f"`{m['mpn']}` ({m['source']}: {m['expected']} → {m['returned']})"
                 for m in mm[:5]
             )
             tail = f", and {len(mm) - 5} more" if len(mm) > 5 else ""

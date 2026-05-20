@@ -53,10 +53,14 @@ SCRAPER_TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
 DEFAULT_XLSX = PROJECT_ROOT / "ref" / "Chip_DataSource_Master.xlsx"
 
 CHANNELS: dict[str, dict[str, Any]] = {
-    "LCSC":    {"script": "scrape_lcsc_v3.py", "timeout": 240},
-    "DIGIKEY": {"script": "scrape_digikey.py", "timeout": 180},
-    "HQEW":    {"script": "scrape_hqew.py",    "timeout": 90},
-    "FUTURE":  {"script": "scrape_future.py",  "timeout": 300},
+    "LCSC":      {"script": "scrape_lcsc_v3.py",  "timeout": 240},
+    "DIGIKEY":   {"script": "scrape_digikey.py",  "timeout": 180},
+    "HQEW":      {"script": "scrape_hqew.py",     "timeout": 90},
+    "FUTURE":    {"script": "scrape_future.py",   "timeout": 300},
+    "RSONLINE":  {"script": "scrape_rsonline.py", "timeout": 90},
+    "ONEYAC":    {"script": "scrape_oneyac.py",   "timeout": 120},
+    "ICKEY":     {"script": "scrape_ickey.py",    "timeout": 150},
+    "ROCHESTER": {"script": "scrape_rochester.py","timeout": 180},
 }
 
 THROTTLE_SECONDS = 1.0
@@ -230,8 +234,10 @@ def pick_best_extracted(record: dict, channel: str, out_dir: Path, input_mpn: st
     if not record:
         return None, 0
 
-    # HQEW + Digikey carry a flat `extracted` directly
-    if channel in ("DIGIKEY", "HQEW"):
+    # Single-variant channels — record carries a flat `extracted` directly.
+    # (HQEW, Digikey, and the 4 newer marketplace/aggregator scrapers built
+    # in 2026-05-18: RSONLINE, ONEYAC, ICKEY, ROCHESTER.)
+    if channel in ("DIGIKEY", "HQEW", "RSONLINE", "ONEYAC", "ICKEY", "ROCHESTER"):
         ex = record.get("extracted")
         if ex:
             # HQEW's extracted may carry an inner variants list — count is informative
@@ -245,6 +251,26 @@ def pick_best_extracted(record: dict, channel: str, out_dir: Path, input_mpn: st
         return None, 0
 
     target = (input_mpn or "").strip().lower()
+    # Alphanumeric-normalized form of the input MPN — used for fuzzy
+    # substring containment when the source returned no exact-MPN match.
+    # Without this guard, multi-variant sources (LCSC, Future) sometimes
+    # return dozens of keyword-tagged unrelated parts and the stock-tiebreak
+    # silently picks the highest-stock one (e.g. LTW-M140SXT57-PA → a JST
+    # connector with 107k stock). Per "uncertain → blank, never invent",
+    # require alphanumeric-substring containment in BOTH directions before
+    # falling back; otherwise treat as no_results.
+    target_alnum = re.sub(r"[^A-Za-z0-9]", "", target).upper()
+
+    def _alnum(s: str) -> str:
+        return re.sub(r"[^A-Za-z0-9]", "", s or "").upper()
+
+    def _fuzzy_match(returned_mpn: str) -> bool:
+        if not target_alnum:
+            return False
+        r = _alnum(returned_mpn)
+        if not r:
+            return False
+        return target_alnum in r or r in target_alnum
 
     def _stock_of(d: dict) -> int:
         try:
@@ -259,7 +285,14 @@ def pick_best_extracted(record: dict, channel: str, out_dir: Path, input_mpn: st
             return None, len(variants)
         exact = [v for v in ok_variants
                  if str(v["extracted"].get("manufacturer_part_number", "")).strip().lower() == target]
-        pool = exact or ok_variants
+        if exact:
+            pool = exact
+        else:
+            fuzzy = [v for v in ok_variants
+                     if _fuzzy_match(v["extracted"].get("manufacturer_part_number", ""))]
+            if not fuzzy:
+                return None, len(variants)
+            pool = fuzzy
         best = max(pool, key=lambda v: _stock_of(v["extracted"]))
         return best["extracted"], len(variants)
 
@@ -286,7 +319,14 @@ def pick_best_extracted(record: dict, channel: str, out_dir: Path, input_mpn: st
             return None, len(variants)
         exact = [ex for ex in candidates
                  if str(ex.get("manufacturer_part_number", "")).strip().lower() == target]
-        pool = exact or candidates
+        if exact:
+            pool = exact
+        else:
+            fuzzy = [ex for ex in candidates
+                     if _fuzzy_match(ex.get("manufacturer_part_number", ""))]
+            if not fuzzy:
+                return None, len(variants)
+            pool = fuzzy
         best = max(pool, key=_stock_of)
         return best, len(variants)
 
@@ -296,10 +336,105 @@ def pick_best_extracted(record: dict, channel: str, out_dir: Path, input_mpn: st
 # --- index row + compare row -----------------------------------------------
 
 
+# --- helpers added for the v2 (warehouse-exploded, API-aligned) schema -----
+
+def _vendor_sku(source: str, ex: dict) -> str:
+    """Per-source vendor SKU lookup. Returns "" when the source has no
+    canonical SKU concept (Future, HQEW, Rochester)."""
+    keys = {
+        "LCSC":      ["lcsc_part_number"],
+        "DIGIKEY":   ["digikey_part_number"],
+        "RSONLINE":  ["rs_stock_no"],
+        "ICKEY":     ["sku_id", "product_id"],
+        "ONEYAC":    ["product_id"],
+    }.get(source, [])
+    for k in keys:
+        v = ex.get(k)
+        if v not in (None, ""):
+            return str(v)
+    return ""
+
+
+_LEAD_TIME_PATTERNS = [
+    (re.compile(r"Factory Lead Time:\s*(\d+)\s*Weeks?", re.I),  lambda n: int(n) * 7),
+    (re.compile(r"Factory Lead Time:\s*(\d+)\s*Days?",  re.I),  int),
+    (re.compile(r"原厂(?:标准)?交货期\s*(\d+)\s*周"),               lambda n: int(n) * 7),
+    (re.compile(r"原厂(?:标准)?交货期\s*(\d+)\s*[天日]"),            int),
+    (re.compile(r"lead\s*(\d+)\s*天"),                            int),
+    (re.compile(r"(\d+)\s*天数"),                                 int),
+    (re.compile(r"(\d+)\s*工作日"),                                int),
+    (re.compile(r"(\d+)\s*Weeks?", re.I),                         lambda n: int(n) * 7),
+    # ONEYAC shorthand: 交期 16W (weeks). The W is uppercase and not followed
+    # by "eek". Anchor on word boundary so we don't catch e.g. "WROOM".
+    (re.compile(r"交期\s*(\d+)\s*W\b", re.I),                     lambda n: int(n) * 7),
+    (re.compile(r"交期\s*(\d+)\s*[天日]"),                          int),
+]
+
+
+def _parse_lead_time_days(ship_text: str, ex: dict, row: dict) -> int | None:
+    """Extract lead-time-in-days from a warehouse row's ship_text.
+
+    Channel-native wording varies — try the common patterns. Returns None when
+    no pattern matches (the cell stays empty in the CSV).
+    """
+    txt = ship_text or ""
+    for pat, fn in _LEAD_TIME_PATTERNS:
+        m = pat.search(txt)
+        if m:
+            try:
+                return fn(m.group(1))
+            except (ValueError, TypeError):
+                continue
+    # Future Factory-Stock rows: fall back to `site_factory_lead_time`
+    if row.get("label") == "Factory Stock":
+        flt = ex.get("site_factory_lead_time") or ""
+        for pat, fn in _LEAD_TIME_PATTERNS:
+            m = pat.search(str(flt))
+            if m:
+                try:
+                    return fn(m.group(1))
+                except (ValueError, TypeError):
+                    continue
+    return None
+
+
+def _warehouse_rows(source: str, ex: dict) -> list[dict]:
+    """Explode `extracted.stock_breakdown` into per-warehouse dicts.
+
+    Returns [] when the breakdown is missing or empty (caller emits a single
+    fallback row with warehouse-level columns blank in that case).
+    """
+    breakdown = ex.get("stock_breakdown") or []
+    if not breakdown:
+        return []
+    out: list[dict] = []
+    for i, row in enumerate(breakdown, 1):
+        out.append({
+            "warehouse":      row.get("warehouse") or "",
+            "warehouse_idx":  i,
+            "ships_from":     row.get("ships_from") or "",
+            "stockpool_qty":  row.get("quantity"),
+            "ship_text":      row.get("ship_text") or "",
+            "lead_time_days": _parse_lead_time_days(row.get("ship_text") or "", ex, row),
+            "moq":            row.get("moq") or ex.get("min_order_qty") or ex.get("min_buy_number"),
+        })
+    return out
+
+
 def derive_price_summary(prices: list[dict]) -> dict:
+    """Summarise a tier-price list with the same scalars the API batch driver emits.
+
+    Returned keys:
+      • min_break_qty     — smallest qty break
+      • price_at_min_qty  — unit price at qty=1 if present, else at smallest break
+      • max_break_qty     — largest qty break
+      • price_at_max_qty  — unit price at largest break (cheapest unit price)
+      • num_price_tiers   — count
+    """
     if not prices:
-        return {"price_at_qty_1": None, "min_break_qty": None,
-                "lowest_unit_price": None, "num_price_tiers": 0}
+        return {"min_break_qty": None, "price_at_min_qty": None,
+                "max_break_qty": None, "price_at_max_qty": None,
+                "num_price_tiers": 0}
     tiers = [t for t in prices if isinstance(t, dict)]
 
     def _num(t):
@@ -319,23 +454,31 @@ def derive_price_summary(prices: list[dict]) -> dict:
     largest = by_qty[-1] if by_qty else None
     one_break = next((t for t in by_qty if t.get("min_qty") == 1), None)
     return {
-        "price_at_qty_1": (_num(one_break) if one_break else (_num(min_break) if min_break else None)),
-        "min_break_qty": (min_break.get("min_qty") if min_break else None),
-        "lowest_unit_price": (_num(largest) if largest else None),
-        "num_price_tiers": len(tiers),
+        "min_break_qty":    (min_break.get("min_qty") if min_break else None),
+        "price_at_min_qty": (_num(one_break) if one_break else (_num(min_break) if min_break else None)),
+        "max_break_qty":    (largest.get("min_qty") if largest else None),
+        "price_at_max_qty": (_num(largest) if largest else None),
+        "num_price_tiers":  len(tiers),
     }
 
 
-def make_index_row(
+def make_index_rows(
     input_mpn: str,
     expected_mfr: str,
-    channel: str,
+    source: str,
     sub_result: dict,
     record: dict | None,
     extracted: dict | None,
     num_variants: int,
     run_subdir: Path,
-) -> dict:
+) -> list[dict]:
+    """Build one CSV row per `extracted.stock_breakdown[]` entry (warehouse-
+    exploded, v2). When `status != ok` or the breakdown is empty, returns a
+    single fallback row with warehouse-level columns blank — mirroring the
+    API track's emit semantics in `api/doc/batch_output_schema.md`.
+
+    Column order is fixed in INDEX_COLUMNS (caller's responsibility).
+    """
     ex = extracted or {}
 
     # Compose final status: subprocess outcome ∧ record content.
@@ -347,7 +490,8 @@ def make_index_row(
 
     if rec_status == "ok" and extracted:
         status = "ok"
-    elif rec_status in ("no_matches", "no_results", "no_listings"):
+    elif rec_status in ("no_matches", "no_results", "no_listings",
+                         "no_detail_anchors", "no_clickable_product"):
         status = "no_results"
     elif rec_status == "blocked":
         status = "blocked"
@@ -364,9 +508,10 @@ def make_index_row(
     prices_summary = derive_price_summary(ex.get("prices") or [])
     returned_mfr = ex.get("manufacturer") or ""
 
-    # Currency: LCSC uses CNY implicitly when stock_now_qty present; Digikey has currency in price tiers; Future has it
+    # Currency: LCSC uses CNY implicitly when stock_now_qty present; Digikey
+    # has currency in price tiers; Future has it.
     currency = ex.get("currency")
-    if not currency and channel == "LCSC" and ex.get("unit_price_cny") is not None:
+    if not currency and source == "LCSC" and ex.get("unit_price_cny") is not None:
         currency = "CNY"
 
     error = sub_result.get("error") or ""
@@ -375,79 +520,72 @@ def make_index_row(
     if not error and rec_status == "blocked":
         error = (record or {}).get("blocker", "blocked")
 
-    return {
-        "input_mpn": input_mpn,
-        "expected_mfr": expected_mfr,
-        "channel": channel,
-        "status": status,
-        "elapsed_sec": sub_result.get("elapsed_sec"),
-        "num_variants": num_variants,
-        "returned_mpn": ex.get("manufacturer_part_number") or "",
-        "returned_mfr": returned_mfr,
-        "mfr_match": _mfr_match(expected_mfr, returned_mfr),
-        "stock_now_qty": ex.get("stock_now_qty"),
-        "stock_future_qty": ex.get("stock_future_qty"),
-        "stock_future_ship_text": ex.get("stock_future_ship_text") or "",
-        "price_at_qty_1": prices_summary["price_at_qty_1"],
-        "min_break_qty": prices_summary["min_break_qty"],
-        "lowest_unit_price": prices_summary["lowest_unit_price"],
-        "num_price_tiers": prices_summary["num_price_tiers"],
-        "currency": currency or "",
-        "datasheet_url": ex.get("datasheet_url") or "",
-        "run_subdir": str(run_subdir.relative_to(PROJECT_ROOT)).replace("\\", "/"),
-        "error": (error or "")[:300],
+    # Fields that are constant across the warehouse rows of one (MPN × source).
+    base = {
+        "input_mpn":         input_mpn,
+        "expected_mfr":      expected_mfr,
+        # Internal short code (LCSC / HQEW / ...). Transformed to the
+        # bilingual SOURCE_LABEL only at CSV/XLSX write time so downstream
+        # bookkeeping that pivots on `source` (failures dedup, per-source
+        # summary stats, --only flag, folder names) keeps using the enum.
+        "source":            source,
+        "status":            status,
+        "returned_mpn":      ex.get("manufacturer_part_number") or "",
+        "vendor_sku":        _vendor_sku(source, ex),
+        "returned_mfr":      returned_mfr,
+        "mfr_match":         _mfr_match(expected_mfr, returned_mfr),
+        "min_break_qty":     prices_summary["min_break_qty"],
+        "price_at_min_qty":  prices_summary["price_at_min_qty"],
+        "max_break_qty":     prices_summary["max_break_qty"],
+        "price_at_max_qty":  prices_summary["price_at_max_qty"],
+        "num_price_tiers":   prices_summary["num_price_tiers"],
+        "currency":          currency or "",
+        "datasheet_url":     ex.get("datasheet_url") or "",
+        "run_subdir":        str(run_subdir.relative_to(PROJECT_ROOT)).replace("\\", "/"),
+        "error":             (error or "")[:300],
+        "elapsed_sec":       sub_result.get("elapsed_sec"),
+        "num_variants":      num_variants,
     }
+
+    wh_rows = _warehouse_rows(source, ex) if status == "ok" else []
+    if not wh_rows:
+        return [{**base,
+                 "warehouse": "", "warehouse_idx": None, "ships_from": "",
+                 "stockpool_qty": None, "ship_text": "",
+                 "lead_time_days": None, "moq": None}]
+    return [{**base, **w} for w in wh_rows]
 
 
 INDEX_COLUMNS = [
-    "input_mpn", "expected_mfr", "channel", "status", "elapsed_sec", "num_variants",
-    "returned_mpn", "returned_mfr", "mfr_match",
-    "stock_now_qty", "stock_future_qty", "stock_future_ship_text",
-    "price_at_qty_1", "min_break_qty", "lowest_unit_price", "num_price_tiers",
-    "currency", "datasheet_url", "run_subdir", "error",
+    # 24 cols mirroring api/doc/batch_output_schema.md
+    "input_mpn", "expected_mfr", "source", "status",
+    "returned_mpn", "vendor_sku", "returned_mfr", "mfr_match",
+    "warehouse", "warehouse_idx", "ships_from",
+    "stockpool_qty", "ship_text", "lead_time_days", "moq",
+    "min_break_qty", "price_at_min_qty", "max_break_qty", "price_at_max_qty",
+    "num_price_tiers", "currency", "datasheet_url",
+    "run_subdir", "error",
+    # 2 scraper-only extras at the end
+    "elapsed_sec", "num_variants",
 ]
 
 
-# Per-channel fields lifted into the wide compare row
-COMPARE_FIELDS = [
-    "status", "num_variants", "returned_mpn", "returned_mfr", "mfr_match",
-    "stock_now_qty", "stock_future_qty", "stock_future_ship_text",
-    "price_at_qty_1", "datasheet_url",
-]
+CHANNEL_ORDER = ["LCSC", "DIGIKEY", "HQEW", "FUTURE", "RSONLINE", "ONEYAC", "ICKEY", "ROCHESTER"]
 
-CHANNEL_ORDER = ["LCSC", "DIGIKEY", "HQEW", "FUTURE"]
-
-
-def make_compare_row(per_chip_rows: dict[str, dict]) -> dict:
-    out = {
-        "input_mpn": next(iter(per_chip_rows.values()))["input_mpn"],
-        "expected_mfr": next(iter(per_chip_rows.values()))["expected_mfr"],
-    }
-    for ch in CHANNEL_ORDER:
-        row = per_chip_rows.get(ch)
-        for fld in COMPARE_FIELDS:
-            key = f"{ch.lower()}_{fld}"
-            out[key] = row.get(fld) if row else None
-    # Cross-channel stock_now disagreement marker: list channels that have stock>0
-    have = []
-    for ch in CHANNEL_ORDER:
-        row = per_chip_rows.get(ch)
-        if row and (row.get("stock_now_qty") or 0) > 0:
-            have.append(ch.lower())
-    if not have:
-        out["stock_now_disagreement"] = "none_have"
-    elif len(have) == len(CHANNEL_ORDER):
-        out["stock_now_disagreement"] = "all_have"
-    else:
-        out["stock_now_disagreement"] = "only_" + "+".join(have)
-    return out
-
-
-COMPARE_COLUMNS = ["input_mpn", "expected_mfr"]
-for _ch in CHANNEL_ORDER:
-    for _fld in COMPARE_FIELDS:
-        COMPARE_COLUMNS.append(f"{_ch.lower()}_{_fld}")
-COMPARE_COLUMNS.append("stock_now_disagreement")
+# Bilingual label written into the CSV `source` column. Internal code paths
+# (folder names, CHANNELS dict keys, --only flag values) still use the
+# short English enum; only the visible CSV cell gets the suffix so a human
+# reviewing the file can tell which Chinese site it is at a glance.
+SOURCE_LABEL = {
+    "LCSC":      "LCSC_立创商城",
+    "DIGIKEY":   "DIGIKEY_得捷电子",
+    "HQEW":      "HQEW_华强电子网",
+    "FUTURE":    "FUTURE_Future_Electronics",
+    "RSONLINE":  "RSONLINE_RS欧时",
+    "ONEYAC":    "ONEYAC_唯样商城",
+    "ICKEY":     "ICKEY_云汉芯城",
+    "ROCHESTER": "ROCHESTER_Rochester_Electronics",
+}
 
 
 # --- writers ---------------------------------------------------------------
@@ -500,6 +638,9 @@ def write_batch_input_csv(chips: list[dict], path: Path) -> None:
 
 
 def write_failures(rows: list[dict], path: Path) -> None:
+    # Failure rows for non-ok cells. v2 schema explodes by warehouse, but a
+    # failed (chip × source) emits exactly one row (warehouse columns blank),
+    # so dedup by (input_mpn, source) is not needed here — every row is unique.
     failures = [r for r in rows if r["status"] != "ok"]
     lines = ["# Batch scraper failures", ""]
     if not failures:
@@ -508,18 +649,18 @@ def write_failures(rows: list[dict], path: Path) -> None:
         return
     lines.append(f"{len(failures)} non-ok rows (out of {len(rows)} total).")
     lines.append("")
-    by_ch: dict[str, list[dict]] = {}
+    by_src: dict[str, list[dict]] = {}
     for r in failures:
-        by_ch.setdefault(r["channel"], []).append(r)
-    for ch in CHANNEL_ORDER:
-        ch_rows = by_ch.get(ch, [])
-        if not ch_rows:
+        by_src.setdefault(r["source"], []).append(r)
+    for src in CHANNEL_ORDER:
+        src_rows = by_src.get(src, [])
+        if not src_rows:
             continue
-        lines.append(f"## {ch} — {len(ch_rows)} failure(s)")
+        lines.append(f"## {src} — {len(src_rows)} failure(s)")
         lines.append("")
         lines.append("| input_mpn | expected_mfr | status | elapsed_sec | error | run_subdir |")
         lines.append("|---|---|---|---|---|---|")
-        for r in ch_rows:
+        for r in src_rows:
             err = (r.get("error") or "").replace("|", "\\|").replace("\n", " ")[:200]
             lines.append(
                 f"| `{r['input_mpn']}` | {r['expected_mfr']} | {r['status']} | "
@@ -532,13 +673,20 @@ def write_failures(rows: list[dict], path: Path) -> None:
 def write_summary_md(
     chips: list[dict],
     rows: list[dict],
-    compare_rows: list[dict],
     skipped: list[dict],
     channels_used: list[str],
     batch_dir: Path,
     started: datetime,
     finished: datetime,
+    json_records: list[dict] | None = None,
 ) -> None:
+    """Render batch_summary.md from the warehouse-exploded `rows` list.
+
+    Per-source stats and rankings are computed by deduplicating to one entry
+    per `(input_mpn, source)` pair — warehouse rows of the same cell share
+    the same `status`, `elapsed_sec`, `vendor_sku`, etc. so it's safe to keep
+    the first row in source order.
+    """
     lines: list[str] = []
     elapsed = (finished - started).total_seconds()
     lines.append(f"# Batch scraper sweep — {len(chips)} chips × {len(channels_used)} channels")
@@ -546,16 +694,23 @@ def write_summary_md(
     lines.append(f"- **Started:** {started.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"- **Finished:** {finished.strftime('%Y-%m-%d %H:%M:%S')}  (elapsed {elapsed:.1f} s ≈ {elapsed/60:.1f} min)")
     lines.append(f"- **Chips processed:** {len(chips)}  ({len(skipped)} row(s) skipped from xlsx)")
-    lines.append(f"- **Total scrape calls:** {len(rows)}  (channels: {', '.join(channels_used)})")
+    lines.append(f"- **Warehouse-row count:** {len(rows)}  (sources: {', '.join(channels_used)})")
     lines.append("")
 
-    # Per-channel pass rate
-    per_channel: dict[str, dict] = {}
+    # Dedupe to one entry per (input_mpn, source) for cell-level stats.
+    cell_rows: dict[tuple[str, str], dict] = {}
     for r in rows:
-        d = per_channel.setdefault(r["channel"], {"ok": 0, "no_results": 0,
-                                                  "blocked": 0, "timeout": 0,
-                                                  "failed_other": 0, "total": 0,
-                                                  "elapsed_total": 0.0})
+        key = (r["input_mpn"], r["source"])
+        cell_rows.setdefault(key, r)
+    cells = list(cell_rows.values())
+
+    # Per-source pass rate
+    per_src: dict[str, dict] = {}
+    for r in cells:
+        d = per_src.setdefault(r["source"], {"ok": 0, "no_results": 0,
+                                             "blocked": 0, "timeout": 0,
+                                             "failed_other": 0, "total": 0,
+                                             "elapsed_total": 0.0})
         d["total"] += 1
         d["elapsed_total"] += float(r.get("elapsed_sec") or 0)
         s = r["status"]
@@ -570,72 +725,83 @@ def write_summary_md(
         else:
             d["failed_other"] += 1
 
-    lines.append("## Per-channel results")
+    lines.append("## Per-source results")
     lines.append("")
-    lines.append("| Channel | OK | No results | Blocked | Timeout | Other fail | Total | OK % | Mean s/MPN |")
+    lines.append("| Source | OK | No results | Blocked | Timeout | Other fail | Total | OK % | Mean s/MPN |")
     lines.append("|---|---|---|---|---|---|---|---|---|")
-    for ch in channels_used:
-        d = per_channel.get(ch, {"ok": 0, "no_results": 0, "blocked": 0,
-                                 "timeout": 0, "failed_other": 0, "total": 0,
-                                 "elapsed_total": 0.0})
+    for src in channels_used:
+        d = per_src.get(src, {"ok": 0, "no_results": 0, "blocked": 0,
+                              "timeout": 0, "failed_other": 0, "total": 0,
+                              "elapsed_total": 0.0})
         pct = (100.0 * d["ok"] / d["total"]) if d["total"] else 0.0
         mean = (d["elapsed_total"] / d["total"]) if d["total"] else 0.0
         lines.append(
-            f"| {ch} | {d['ok']} | {d['no_results']} | {d['blocked']} | "
+            f"| {src} | {d['ok']} | {d['no_results']} | {d['blocked']} | "
             f"{d['timeout']} | {d['failed_other']} | {d['total']} | "
             f"{pct:.1f}% | {mean:.1f} |"
         )
     lines.append("")
 
-    # Cross-channel coverage: for each MPN, count how many channels returned ok
+    # Cross-source coverage per chip: how many sources returned ok for the chip
+    by_chip: dict[str, set[str]] = {}
+    for r in cells:
+        if r["status"] == "ok":
+            by_chip.setdefault(r["input_mpn"], set()).add(r["source"])
     coverage_hist: dict[int, int] = {}
-    for c in compare_rows:
-        n_ok = sum(1 for ch in channels_used if c.get(f"{ch.lower()}_status") == "ok")
+    for chip in chips:
+        n_ok = len(by_chip.get(chip["input_mpn"], set()))
         coverage_hist[n_ok] = coverage_hist.get(n_ok, 0) + 1
-    lines.append("## Cross-channel coverage per chip")
+    lines.append("## Cross-source coverage per chip")
     lines.append("")
-    lines.append("| # channels returning ok | # chips |")
+    lines.append("| # sources returning ok | # chips |")
     lines.append("|---|---|")
     for n in sorted(coverage_hist.keys(), reverse=True):
         lines.append(f"| {n} | {coverage_hist[n]} |")
     lines.append("")
 
-    # Highlights — top 5 stock per channel
-    lines.append("## Highlights — top 5 by in-stock quantity")
+    # Highlights — top 5 by chip-level stock_now_qty (from the JSON record).
+    # The warehouse-exploded CSV has per-pool stockpool_qty; for ranking
+    # purposes use the cell-level `extracted_best.stock_now_qty` if available.
+    chip_stock: dict[tuple[str, str], int] = {}
+    if json_records:
+        for rec in json_records:
+            ex = rec.get("extracted_best") or {}
+            q = ex.get("stock_now_qty")
+            if isinstance(q, int):
+                chip_stock[(rec["input_mpn"], rec.get("source") or rec.get("channel"))] = q
+    lines.append("## Highlights — top 5 by chip-level in-stock quantity")
     lines.append("")
-    for ch in channels_used:
-        lines.append(f"### {ch}")
+    for src in channels_used:
+        lines.append(f"### {src}")
         lines.append("")
-        ok_rows = [r for r in rows if r["channel"] == ch and r["status"] == "ok"
-                   and r.get("stock_now_qty") not in (None, "", 0)]
-        if not ok_rows:
+        candidates = [(mpn, q) for (mpn, s), q in chip_stock.items() if s == src and q]
+        if not candidates:
             lines.append("_no in-stock results_")
             lines.append("")
             continue
-        top = sorted(ok_rows, key=lambda r: r.get("stock_now_qty") or 0, reverse=True)[:5]
-        lines.append("| input_mpn | returned_mfr | stock_now_qty | price_at_qty_1 | currency |")
+        candidates.sort(key=lambda t: t[1], reverse=True)
+        lines.append("| input_mpn | returned_mfr | stock_now_qty | price_at_min_qty | currency |")
         lines.append("|---|---|---|---|---|")
-        for r in top:
-            qty = r.get("stock_now_qty")
-            qty_s = f"{qty:,}" if isinstance(qty, int) else str(qty)
-            price = r.get("price_at_qty_1")
+        for mpn, q in candidates[:5]:
+            r = cell_rows.get((mpn, src), {})
+            price = r.get("price_at_min_qty")
             price_s = "" if price is None else str(price)
             lines.append(
-                f"| `{r['input_mpn']}` | {r['returned_mfr']} | {qty_s} | {price_s} | {r['currency']} |"
+                f"| `{mpn}` | {r.get('returned_mfr','')} | {q:,} | {price_s} | {r.get('currency','')} |"
             )
         lines.append("")
 
-    # Manufacturer mismatches per channel
+    # Manufacturer mismatches per source
     lines.append("## Manufacturer mismatches (returned_mfr ≠ expected_mfr after normalization)")
     lines.append("")
-    for ch in channels_used:
-        mismatches = [r for r in rows
-                      if r["channel"] == ch and r["status"] == "ok"
+    for src in channels_used:
+        mismatches = [r for r in cells
+                      if r["source"] == src and r["status"] == "ok"
                       and r["returned_mfr"] and r["mfr_match"] is False]
         if not mismatches:
-            lines.append(f"- **{ch}:** none")
+            lines.append(f"- **{src}:** none")
             continue
-        lines.append(f"- **{ch}: {len(mismatches)} chip(s)**")
+        lines.append(f"- **{src}: {len(mismatches)} chip(s)**")
         lines.append("")
         lines.append("  | input_mpn | expected_mfr | returned_mfr |")
         lines.append("  |---|---|---|")
@@ -658,12 +824,11 @@ def write_summary_md(
     lines.append("")
     for name, what in [
         ("batch_summary.md", "this file"),
-        ("batch_index.csv / .xlsx", "long form — one row per (MPN × channel)"),
-        ("batch_compare.csv / .xlsx", "wide form — one row per MPN, ~43 cols across all 4 channels"),
-        ("batch_index.json", "machine-readable long form (records + subprocess output tails)"),
+        ("batch_index.csv / .xlsx", "warehouse-exploded — one row per (MPN × source × warehouse). See scraper/doc/batch_output_schema.md."),
+        ("batch_index.json", "machine-readable per-(MPN × source) records (full `record` + `extracted_best`)"),
         ("batch_input.csv", "verbatim (MPN, expected_mfr) input rows"),
-        ("failures.md", "non-ok rows grouped by channel"),
-        ("Test_<sanitized_mpn>_<CHANNEL>/", "per-MPN-per-channel run folder"),
+        ("failures.md", "non-ok rows grouped by source"),
+        ("Test_<sanitized_mpn>_<SOURCE>/", "per-MPN-per-source run folder"),
     ]:
         lines.append(f"- `{name}` — {what}")
     lines.append("")
@@ -705,20 +870,20 @@ def process_one_channel(
         record = load_record(run_dir, mpn)
         extracted, n_var = pick_best_extracted(record or {}, channel, run_dir, mpn)
         sub_result = {"status": "ok", "elapsed_sec": None, "error": ""}
-        row = make_index_row(mpn, mfr, channel, sub_result, record, extracted, n_var, run_dir)
+        rows = make_index_rows(mpn, mfr, channel, sub_result, record, extracted, n_var, run_dir)
         record_log = {
-            "channel": channel, "input_mpn": mpn, "expected_mfr": mfr,
+            "source": channel, "input_mpn": mpn, "expected_mfr": mfr,
             "elapsed_sec": None, "subprocess_status": "resume_skipped",
             "record": record, "extracted_best": extracted,
         }
-        return channel, row, record_log
+        return channel, rows, record_log
 
     sub_result = run_subprocess(channel, mpn, run_dir)
     record = load_record(run_dir, mpn)
     extracted, n_var = pick_best_extracted(record or {}, channel, run_dir, mpn)
-    row = make_index_row(mpn, mfr, channel, sub_result, record, extracted, n_var, run_dir)
+    rows = make_index_rows(mpn, mfr, channel, sub_result, record, extracted, n_var, run_dir)
     record_log = {
-        "channel": channel, "input_mpn": mpn, "expected_mfr": mfr,
+        "source": channel, "input_mpn": mpn, "expected_mfr": mfr,
         "elapsed_sec": sub_result.get("elapsed_sec"),
         "subprocess_status": sub_result.get("status"),
         "stdout_tail": sub_result.get("stdout_tail"),
@@ -727,13 +892,18 @@ def process_one_channel(
         "extracted_best": extracted,
         "error": sub_result.get("error"),
     }
-    return channel, row, record_log
+    return channel, rows, record_log
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--xlsx", type=Path, default=DEFAULT_XLSX,
                         help=f"Path to the chip-list xlsx (default: {DEFAULT_XLSX}).")
+    parser.add_argument("--mpns", type=str, default=None,
+                        help="Semicolon-separated MPN list — overrides --xlsx entirely. "
+                             "(Semicolon, not comma, because some MPNs contain commas — "
+                             "e.g. `BT168GW,115`.) Optional `MPN:expected_mfr` syntax "
+                             "per entry: 'STM32G030F6P6:STM;BT168GW,115:WEEN'.")
     parser.add_argument("--limit", type=int, default=None,
                         help="Process only the first N valid MPNs (dry-run aid).")
     parser.add_argument("--only", type=str, default=None,
@@ -754,10 +924,25 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv[1:])
 
     channels_used = _parse_only(args.only)
-    chips, skipped = load_chip_list(args.xlsx)
+    if args.mpns:
+        chips = []
+        skipped = []
+        for i, raw in enumerate(args.mpns.split(";")):
+            entry = raw.strip()
+            if not entry:
+                continue
+            if ":" in entry:
+                mpn_s, mfr_s = entry.split(":", 1)
+                mpn_s, mfr_s = mpn_s.strip(), mfr_s.strip()
+            else:
+                mpn_s, mfr_s = entry, ""
+            chips.append({"row": i + 1, "input_mpn": mpn_s, "expected_mfr": mfr_s})
+        print(f"Loaded {len(chips)} chip rows from --mpns flag (xlsx ignored)")
+    else:
+        chips, skipped = load_chip_list(args.xlsx)
+        print(f"Loaded {len(chips)} chip rows ({len(skipped)} skipped) from {args.xlsx.name}")
     if args.limit:
         chips = chips[: args.limit]
-    print(f"Loaded {len(chips)} chip rows ({len(skipped)} skipped) from {args.xlsx.name}")
     print(f"Channels: {channels_used}")
 
     # Batch folder selection
@@ -779,7 +964,6 @@ def main(argv: list[str]) -> int:
 
     started = datetime.now(timezone.utc)
     index_rows: list[dict] = []
-    compare_rows: list[dict] = []
     all_records: list[dict] = []
 
     parallel = (not args.sequential) and len(channels_used) > 1
@@ -791,7 +975,6 @@ def main(argv: list[str]) -> int:
         mfr = chip["expected_mfr"]
         chip_started = time.time()
         print(f"[{i:>3}/{len(chips)}] {mpn}  (expected {mfr})")
-        per_chip_rows: dict[str, dict] = {}
 
         if parallel:
             # Fan out: one subprocess per channel, all running concurrently.
@@ -812,26 +995,27 @@ def main(argv: list[str]) -> int:
                 for ch in channels_used
             ]
 
-        for channel, row, record_log in channel_results:
-            index_rows.append(row)
-            per_chip_rows[channel] = row
+        for channel, rows, record_log in channel_results:
+            index_rows.extend(rows)
             all_records.append(record_log)
-            qty = row.get("stock_now_qty")
+            # Console line: chip-level stock from the JSON record (rows are
+            # warehouse-exploded so they don't carry a chip-level aggregate).
+            ex_best = record_log.get("extracted_best") or {}
+            qty = ex_best.get("stock_now_qty") if ex_best else None
             qty_s = f"{qty:,}" if isinstance(qty, int) else (str(qty) if qty is not None else "?")
-            n_var = row.get("num_variants", 0)
-            elapsed = row.get("elapsed_sec")
+            status = rows[0]["status"] if rows else "unknown"
+            n_var = rows[0].get("num_variants", 0) if rows else 0
+            n_wh = sum(1 for r in rows if r.get("warehouse_idx"))
+            elapsed = rows[0].get("elapsed_sec") if rows else None
             if record_log.get("subprocess_status") == "resume_skipped":
-                print(f"      {channel}: [resume] {row['status']}  qty={qty_s}  variants={n_var}")
+                print(f"      {channel}: [resume] {status}  qty={qty_s}  variants={n_var}  warehouses={n_wh}")
             else:
                 el_s = f"{elapsed:.1f}" if isinstance(elapsed, (int, float)) else "?"
-                print(f"      {channel}: {row['status']}  qty={qty_s}  variants={n_var}  ({el_s} s)")
+                print(f"      {channel}: {status}  qty={qty_s}  variants={n_var}  warehouses={n_wh}  ({el_s} s)")
 
         if parallel:
             chip_wall = time.time() - chip_started
             print(f"      chip wallclock: {chip_wall:.1f} s")
-
-        if len(per_chip_rows) == len(channels_used):
-            compare_rows.append(make_compare_row(per_chip_rows))
 
         # Politeness gap between chips. With parallel channels this fires
         # once per chip (was once per channel call in sequential mode).
@@ -840,23 +1024,28 @@ def main(argv: list[str]) -> int:
 
     finished = datetime.now(timezone.utc)
 
-    # Outputs
-    write_csv(index_rows, INDEX_COLUMNS, batch_dir / "batch_index.csv")
-    write_xlsx(index_rows, INDEX_COLUMNS, batch_dir / "batch_index.xlsx", "batch_index")
-    if compare_rows:
-        write_csv(compare_rows, COMPARE_COLUMNS, batch_dir / "batch_compare.csv")
-        write_xlsx(compare_rows, COMPARE_COLUMNS, batch_dir / "batch_compare.xlsx", "batch_compare")
+    # Outputs.
+    # The CSV / XLSX `source` column carries the bilingual SOURCE_LABEL
+    # ("LCSC_立创商城" etc.) — a human reviewing the file can tell the
+    # site at a glance. In-memory rows keep the short enum for the dedup /
+    # summary code paths.
+    csv_rows = [{**r, "source": SOURCE_LABEL.get(r["source"], r["source"])}
+                for r in index_rows]
+    write_csv(csv_rows, INDEX_COLUMNS, batch_dir / "batch_index.csv")
+    write_xlsx(csv_rows, INDEX_COLUMNS, batch_dir / "batch_index.xlsx", "batch_index")
     (batch_dir / "batch_index.json").write_text(
         json.dumps(all_records, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
     )
     write_failures(index_rows, batch_dir / "failures.md")
     write_summary_md(
-        chips, index_rows, compare_rows, skipped, channels_used,
+        chips, index_rows, skipped, channels_used,
         batch_dir, started.astimezone(), finished.astimezone(),
+        json_records=all_records,
     )
 
-    print(f"\nDone. {len(index_rows)} index rows, {len(compare_rows)} compare rows.")
+    n_cells = len({(r["input_mpn"], r["source"]) for r in index_rows})
+    print(f"\nDone. {n_cells} cells × ~{len(index_rows)/max(n_cells,1):.1f} warehouse rows/cell = {len(index_rows)} index rows.")
     print(f"Wrote: {batch_dir}")
 
     # Refresh scraper/README.md status block so bare-shell runs (no Claude Code

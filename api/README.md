@@ -7,25 +7,27 @@ no browser, no anti-bot fight.
 
 <!-- BEGIN AUTO:status — managed by api/scripts/_update_readme_status.py (see "Auto-updating this README" at bottom) -->
 
-## Status snapshot (2026-05-18)
+## Status snapshot (2026-05-20)
 
 | Vendor | Endpoint | Auth | Working? |
 |---|---|---|---|
 | **Mouser** Search API v1 | `POST api.mouser.com/api/v1/search/partnumber (fallback /search/keyword)` | API key in querystring | ✅ |
 | **Digikey** Product Information API v4 | `POST api.digikey.com/products/v4/search/keyword` | OAuth2 client_credentials → bearer | ✅ |
 | Octopart / Nexar | not started | OAuth2 (keys not yet acquired) | ⏳ |
-| Element14 / Farnell | not started | API key (key not yet acquired) | ⏳ |
+| **Arrow Electronics** Pricing & Availability v4 | `GET api.arrow.com/itemservice/v4/en/search/list` | querystring `login` + `apikey` (BOTH required); same pair also nested in the `req` JSON payload. Inventory is republished across `webSites[].sources[]` so the same physical stock may appear under Verical and Arrow ACNA/EUROPE — dedup by `(fohQty, shipsFrom, shipsIn)` before summing. | ✅ |
+| Element14 / Farnell (e络盟) | `GET api.element14.com/catalog/products` | API key in querystring; default store `cn.element14.com`; uses `term=manuPartNum:<MPN>` (NOT `manuPartNumber`); `versionNumber` is NOT a valid param. Lead time `stock.leastLeadTime` is in **days** (not weeks). Quota: 2 req/s, 1,000/day. | ✅ |
 
-**Latest batch run:** `test/api_test/BatchTest_20260517_16_07_16/` — 103 MPNs × 2 channel(s) = 206 calls.
+**Latest batch run:** `test/api_test/BatchTest_20260520_07_40_36/` — 103 MPNs × 5 source(s) = 515 (chip × source) pairs.
 
-| Channel | OK | No results | Failed | OK % |
+| Source | OK | No results | Failed | OK % |
 |---|---|---|---|---|
-| Mouser | 64 | 39 | 0 | 62.1 % |
-| Digikey | 58 | 45 | 0 | 56.3 % |
+| Mouser_贸泽 | 59 | 44 | 0 | 57.3 % |
+| DIGIKEY_得捷电子 | 60 | 43 | 0 | 58.3 % |
+| ELEMENT14_e络盟 | 43 | 60 | 0 | 41.7 % |
+| ARROW_艾睿 | 42 | 61 | 0 | 40.8 % |
+| LCSC_立创商城 | 72 | 31 | 0 | 69.9 % |
 
-Both channels returned a usable result for **57** of the 103 chips. Of those: 33 have stock at both, 16 only at Digikey, 2 only at Mouser, 6 factory-order at both.
-
-**Manufacturer-name mismatches surfaced:** 2 — `HT66F0021 8SOP TR` (MOUSER: HOLTEK → ROHM Semiconductor), `EMW3080` (DIGIKEY: MXCHIP → Seeed Technology Co., Ltd).
+**Manufacturer-name mismatches surfaced:** 32 — `Z0103MN,135` (ELEMENT14_e络盟: WEEN → STMICROELECTRONICS), `HT66F0021 8SOP TR` (Mouser_贸泽: HOLTEK → ROHM Semiconductor), `BT139-600E` (LCSC_立创商城: WEEN → minos(迈诺斯)), `BTA312-600B/DG,127` (ARROW_艾睿: WEEN → NXP Semiconductors), `BT131-600/DG,116` (ARROW_艾睿: WEEN → NXP Semiconductors), and 27 more.
 
 <!-- END AUTO:status -->
 

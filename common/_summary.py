@@ -140,7 +140,8 @@ def _render_breakdown_table(breakdown: list[dict]) -> list[str]:
             if kind == "label":
                 cells.append(str(r.get("label", "")))
             elif kind == "warehouse":
-                cells.append(str(r.get("warehouse", "")))
+                w = r.get("warehouse")
+                cells.append("" if w is None else str(w))
             elif kind == "quantity":
                 q = r.get("quantity")
                 cells.append(_format_qty(q) if q is not None else "")
@@ -169,11 +170,14 @@ def _render_stock_section(ex: dict) -> list[str]:
         ("stock_now_ship_text", "现货 ship time (发货时间)"),
         ("stock_future_qty", "期货/在途 quantity"),
         ("stock_future_ship_text", "期货/在途 ship time (发货时间)"),
-        # LCSC-specific warehouse breakdown
-        ("stock_gd_warehouse", "现货 — 广东仓"),
-        ("stock_js_warehouse", "现货 — 江苏仓"),
+        # NOTE: LCSC's per-warehouse fields (stock_gd_warehouse / stock_js_warehouse /
+        # stock_smt) come from szlcsc.com's product *API* — they are not labelled on
+        # the product page UI, so surfacing them as headline bullets made the summary
+        # look like it was scraping warehouse labels the user couldn't see on the
+        # screenshot. We deliberately do not render them here. The values remain in
+        # the JSON (`extracted.stock_*`) for downstream consumers; the summary just
+        # shows the user-visible aggregate `stock_now_qty / stock_future_qty`.
         ("stock_transit", "在途 (in-transit)"),
-        ("stock_smt", "SMT扩展库"),
         ("stock_shenzhen", "Stock — Shenzhen"),
         ("stock_domestic_total", "Stock — domestic total"),
         ("stock_overseas_total", "Stock — overseas total"),
