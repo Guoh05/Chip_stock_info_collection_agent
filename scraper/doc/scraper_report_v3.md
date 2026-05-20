@@ -1,8 +1,8 @@
-# Web Scraper Test Report v3 — 8 Working Sources + Batch Driver + Audited Data
+# Web Scraper Test Report v3 — 9 Working Sources + Batch Driver + Audited Data
 
-**Date:** 2026-05-19 (supersedes v2 from 2026-05-17)
-**Scope of changes since v2:** 4 → 8 working scrapers, 4 additional sources evaluated and dropped, batch driver + warehouse-exploded `batch_index.csv` schema aligned with the API track, comprehensive audit of every scraper to remove fabricated labels ("uncertain → blank, never invent").
-**Stack:** Python 3.10.9 (`.venv/`), `curl_cffi` 0.15.0 (TLS impersonation), Playwright Chromium **and** Firefox + `playwright-stealth`, BeautifulSoup/lxml, openpyxl.
+**Date:** 2026-05-20 (rev. since 2026-05-19 — bom2buy recovered via Opera-profile session reuse + master input swapped to Shortage Emergency Response List v2)
+**Scope of changes since v2:** 4 → 9 working scrapers, 3 additional sources evaluated and dropped, batch driver + warehouse-exploded `batch_index.csv` schema aligned with the API track, comprehensive audit of every scraper to remove fabricated labels ("uncertain → blank, never invent"), **bom2buy default post-step in the batch driver**, **master input migrated to `ref/Shortage Emergency Response List_v2.xlsx` sheet `Part List Modify` (107 unique MPNs after dedup, MPN col `Manufacture Part Number`)**.
+**Stack:** Python 3.10.9 (`.venv/`), `curl_cffi` 0.15.0 (TLS impersonation), Playwright Chromium **and** Firefox + `playwright-stealth`, **Playwright over user's Opera install (bom2buy)**, BeautifulSoup/lxml, openpyxl.
 
 ## TL;DR
 
@@ -16,16 +16,18 @@
 | 6 | **ONEYAC** (唯样商城, oneyac.com) | ✅ | Playwright Firefox | 51.0 % | none |
 | 7 | **ICKEY** (云汉芯城, ickey.cn) | ✅ | Playwright Chromium | 82.4 % | none — but is a marketplace **aggregator** (resale from Digi-Key / 云汉) |
 | 8 | **Rochester Electronics** (rocelec.com) | ✅ | Playwright Firefox | 9.8 % | none — but is **EOL-only**; modern parts rarely hit |
-| 9 | **Mouser** (贸泽, mouser.cn / .com) | ❌ | n/a | n/a | Akamai BotManager `bm-verify` |
-| 10 | **Arrow** (艾睿电子, arrow.com) | ❌ | n/a | n/a | Akamai BotManager `_abck` |
+| 9 | **bom2buy** (买芯片网, bom2buy.com) | ✅ (**session-dependent**) | Playwright + **user's Opera install** (user-data-dir reuse) | 80 % on 10-chip pilot (2026-05-20) | IconCaptcha — bypassed by reusing user-passed session |
+| 10 | **Mouser** (贸泽, mouser.cn / .com) | ❌ | n/a | n/a | Akamai BotManager `bm-verify` |
+| 11 | **Arrow** (艾睿电子, arrow.com) | ❌ | n/a | n/a | Akamai BotManager `_abck` |
 
-**8 / 10 working web sources.** Mouser + Arrow remain blocked (Akamai BMP); both are accessible via the parallel `api/` track using official keys.
+**9 / 11 working web sources.** Mouser + Arrow remain blocked (Akamai BMP); both are accessible via the parallel `api/` track using official keys.
 
 Sources **evaluated and dropped 2026-05-18:**
 - `cn.element14.com` (e络盟) — Akamai BMP 403 even after homepage warmup
-- `bom2buy.com` (买芯片网) — global CAPTCHA gate
 - `verical.com` (Arrow legacy) — "系统错误" popup + WAF on repeated probes
 - `chip1stop.com` — dead / 301 to `arrow.com` after acquisition
+
+**`bom2buy.com` was dropped 2026-05-18 (IconCaptcha gate)** but recovered 2026-05-20 via Playwright + the user's Opera install: the user manually passes the IconCaptcha once in Opera, then we drive Opera through Playwright (`executable_path` + `user_data_dir` pointing at the real Opera profile) so we inherit the captcha-cleared session cookies. See § "bom2buy via Opera session reuse" below for the recipe and operational caveats.
 
 ---
 
@@ -209,11 +211,29 @@ Engine change: Playwright Firefox unchanged, but the JS extractor now:
 - **No-match guard:** when no productName matches the input, bail with `no_results`. Without this, Rochester's `/global-search/` returns category-related products and clicking the first row silently scraped unrelated parts.
 - **Coverage:** very low on contemporary BOMs (5/51 on the sweep). Rochester's specialty is EOL / Last-Time-Buy / legacy stock. Useful as a tail source for legacy parts, not a default.
 
-### 9. Mouser — ❌ still blocked
+### 9. bom2buy via Opera session reuse — NEW 2026-05-20
+
+- **Engine:** Playwright with `chromium.launch_persistent_context(executable_path=<opera.exe>, user_data_dir=<Opera profile>)`. The user's Opera install is driven directly — we don't extract cookies (bom2buy uses Chrome v20 App-Bound Encryption which can't be decrypted by non-Opera processes). Opera runs the captcha-cleared session and we simply read the rendered DOM.
+- **Search URL:** `https://www.bom2buy.com/search?part=<MPN>&qty=1` (the parameter name is `part`, NOT `keyword` — a wrong-guess `keyword=` returns an empty page).
+- **DOM:** `.exact-part-group-list > .distributor-results` is one MPN variant; each variant's `tbody tr` is a distributor row with `.td-distri / .td-stock / .td-delivery-place / .td-price / .td-min-pack` cells.
+- **"No results" detection:** there is a hidden `<div class="exact-no-result hide" style="display:none">` template on EVERY search page — substring match of `没有找到` is a false-positive. Authoritative check: exactly when `.exact-part-group-list .distributor-results` is empty.
+- **Pre-flight session check:** on startup, hit the homepage; if `captcha.bom2buy.com` is in `page.url` OR title is `Captcha`, the session is expired. The script raises `CaptchaRequired` and exits with code **3** (distinct from generic failure 2). The batch driver SHOULD treat exit-3 as "skip this source, finish other channels" rather than fail the run.
+- **Operational caveats:**
+  - Opera must be FULLY closed before scraping (Playwright takes exclusive lock on user-data-dir). The script auto-detects running `opera.exe` and refuses to start.
+  - The user's IconCaptcha pass is needed every few hours/days; the script does not solve it.
+  - Rate-limited by a per-MPN delay (3 s) and a longer pause every 50 cells (30 s) to avoid the secondary slider-captcha that bom2buy applies under load.
+  - Headless mode does NOT work for Opera (launch hangs at 180 s); the visible window pops up briefly per launch.
+- **Data richness:** bom2buy is a BOM aggregator. One typical record returns 10–40 distributor rows per MPN (Digi-Key + element14 + Mouser + Wuhan P&S + STMicro direct + RS + TME + Farnell + Verical + Future + …), each with `stock_qty`, multi-currency tier prices, region + lead time, MOQ, distributor SKU, authorized flag. This is **more structured than any other source we have**.
+- **Pilot batch (10 MPNs, 2026-05-20):** 8 ok / 2 no_results. **Distinct** distributors per part after dedup: 6 (ESP32-WROOM-32E-N4) to 24 (IRLML5103TRPBF EOL). Pre-dedup row counts were higher (10–40) — many distributors carry multiple packaging variants of the same chip (different SKUs for tape/reel vs tray vs cut tape); we keep only the first row per distributor name to avoid double-counting stock. No-results cells (HT66F017-HF Holtek, LTST-C191KFKT-PH2 LiteOn LED) are genuine: bom2buy carries primarily Western-authorized parts.
+- **Distributor dedup + per-row prices:** the canonical `stock_breakdown[]` has one entry per DISTINCT distributor name (first row kept); each entry carries its OWN `prices` tier list. bom2buy is the only source where each warehouse row has an independent tier structure — Digi-Key may have 9 tiers, Wuhan P&S 4 tiers, Mouser a single break at min_qty=2000. Downstream warehouse-exploded batch_index.csv exporters must read `stock_breakdown[i].prices` (NOT the cell-level top-level `prices[]`) when emitting per-warehouse rows from bom2buy cells.
+- **Lifecycle status:** bom2buy exposes `Active` / `Transferred` / `Contact Manufacturer` / `Obsolete` — the most explicit lifecycle signal across all our sources.
+- **Datasheet anchor:** the header datasheet link is sometimes `javascript:void(0)` (login-walled) — extraction returns `null` in that case rather than fabricating.
+
+### 10. Mouser — ❌ still blocked
 
 Unchanged from v2. Akamai BotManager `bm-verify` JS sensor. Use the API track (`api/scripts/api_mouser.py`) with the Search API v1 key in `api/.env`.
 
-### 10. Arrow — ❌ still blocked
+### 11. Arrow — ❌ still blocked
 
 Unchanged from v2. Akamai BMP `_abck` sensor. Use the API track (`api/scripts/api_arrow.py`) once an Arrow API key is provisioned (not done as of 2026-05-19).
 

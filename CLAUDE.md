@@ -11,6 +11,8 @@ first-party APIs (`api/`), or both.
 - `common/` — Shared code (canonical summary renderer + cross-track utilities).
 - `test/` — All output. Split into `scraper_test/`, `api_test/`, `comparison/`, `merged/`.
 - `ref/` — Source-of-truth inputs (chip list xlsx, datasheets).
+  - **Master chip list (2026-05-20+): `ref/Shortage Emergency Response List_v2.xlsx`**, sheet `Part List Modify`, column `Manufacture Part Number` (107 unique MPNs after dedup from 280 raw rows). The `Manufacture` column is reference only.
+  - Legacy `Chip_DataSource_Master.xlsx` (header row 4, MPN col 1, mfr col 2) still supported via the `load_chip_list` backward-compat path if explicitly passed via `--xlsx`.
 - `.venv/` — Shared Python 3.10.9 venv. `.claude/` — settings, hooks, skills.
 
 Each track's `README.md` carries the live status snapshot and run commands.

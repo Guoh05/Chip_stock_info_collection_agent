@@ -81,6 +81,9 @@ CHANNEL_STATUS = [
     ("ROCHESTER", "**Rochester** (Rochester Electronics, rocelec.com)",
      "Playwright Firefox + LWC hydration + exact-MPN guard (EOL-only)",
      "ok", "scrape_rochester.py"),
+    ("BOM2BUY", "**bom2buy** (买芯片网, bom2buy.com)",
+     "Playwright + Opera user-data-dir reuse (requires user-managed IconCaptcha session; Opera must be fully closed when scraping)",
+     "ok", "scrape_bom2buy.py"),
     ("MOUSER", "Mouser (贸泽, mouser.cn / .com)",
      "Blocked by Akamai BotManager `bm-verify` — use api/scripts/api_mouser.py instead",
      "blocked", "scrape_mouser_v2.py"),
@@ -92,8 +95,7 @@ CHANNEL_STATUS = [
 # Sources evaluated and permanently dropped — not scraped, kept here for the
 # benefit of anyone reading the doc and wondering "did we try X?".
 DROPPED_SOURCES = [
-    ("bom2buy 买芯片网 (bom2buy.com)",
-     "Global CAPTCHA gate — every page redirects to captcha.bom2buy.com. Needs paid solver."),
+    # bom2buy is now working via Playwright + Opera profile reuse — moved to CHANNEL_STATUS above.
     ("e络盟 Element14 (cn.element14.com)",
      "Akamai BMP 403 (same family as Mouser/Arrow). Use api/scripts/api_element14.py (key pending)."),
     ("Verical (verical.com)",
@@ -107,7 +109,7 @@ STATUS_ICON = {"ok": "✅", "pending": "⏳", "blocked": "❌"}
 # Channel short codes (must match the `CHANNELS` dict in batch_scraper_test.py
 # and the bilingual `SOURCE_LABEL` prefix). Used for ordering the per-source
 # pass-rate table.
-WORKING_CHANNELS = ["LCSC", "DIGIKEY", "HQEW", "FUTURE", "RSONLINE", "ONEYAC", "ICKEY", "ROCHESTER"]
+WORKING_CHANNELS = ["LCSC", "DIGIKEY", "HQEW", "FUTURE", "RSONLINE", "ONEYAC", "ICKEY", "ROCHESTER", "BOM2BUY"]
 
 # Display form for the per-channel results table (initialisms stay uppercase,
 # proper nouns are capitalized). Unknown channels fall back to .title().
@@ -120,6 +122,7 @@ CHANNEL_DISPLAY = {
     "ONEYAC": "Oneyac",
     "ICKEY": "ICKEY",
     "ROCHESTER": "Rochester",
+    "BOM2BUY": "Bom2buy",
     "MOUSER": "Mouser",
     "ARROW": "Arrow",
 }
@@ -135,14 +138,37 @@ SOURCE_LABEL_DISPLAY = {
     "ONEYAC": "ONEYAC_唯样商城",
     "ICKEY": "ICKEY_云汉芯城",
     "ROCHESTER": "ROCHESTER_Rochester_Electronics",
+    "BOM2BUY": "BOM2BUY_买芯片网",
 }
 
 
 def find_latest_batch() -> Path | None:
+    """Pick the most recent FULL multi-source batch.
+
+    Single-source / per-channel pilot batches (e.g. `BatchTest_*_bom2buy/`) are
+    skipped because rendering the status snapshot from them would show 0/0/0
+    for every other source, which is misleading. We require >= 3 distinct
+    sources in `batch_index.csv` to consider a folder a "full batch".
+    """
     if not SCRAPER_TEST_ROOT.exists():
         return None
-    batches = sorted(SCRAPER_TEST_ROOT.glob("BatchTest_*"))
-    return batches[-1] if batches else None
+    candidates = sorted(SCRAPER_TEST_ROOT.glob("BatchTest_*"), reverse=True)
+    for b in candidates:
+        idx = b / "batch_index.csv"
+        if not idx.exists():
+            continue
+        try:
+            with open(idx, encoding="utf-8-sig") as f:
+                seen = set()
+                for r in csv.DictReader(f):
+                    src = r.get("source") or r.get("channel") or ""
+                    seen.add(_short_source(src))
+                    if len(seen) >= 3:
+                        return b
+        except OSError:
+            continue
+    # No multi-source batch found — fall back to most recent regardless.
+    return candidates[0] if candidates else None
 
 
 def _short_source(s: str) -> str:

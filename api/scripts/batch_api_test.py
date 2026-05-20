@@ -59,7 +59,10 @@ from dotenv import load_dotenv
 # Project paths --------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 API_TEST_ROOT = PROJECT_ROOT / "test" / "api_test"
-DEFAULT_XLSX = PROJECT_ROOT / "ref" / "Chip_DataSource_Master.xlsx"
+DEFAULT_XLSX = PROJECT_ROOT / "ref" / "Shortage Emergency Response List_v2.xlsx"
+DEFAULT_XLSX_SHEET = "Part List Modify"
+DEFAULT_XLSX_MPN_HEADER = "Manufacture Part Number"
+DEFAULT_XLSX_MFR_HEADER = "Manufacture"
 ENV_PATH = PROJECT_ROOT / "api" / ".env"
 
 # Reuse the single-call api clients ------------------------------------------
@@ -199,21 +202,64 @@ def _parse_lead_days(ship_text: str | None) -> int | None:
 # --- input loading ----------------------------------------------------------
 
 
-def load_chip_list(xlsx_path: Path) -> list[dict]:
-    """Return [{row, input_mpn, expected_mfr}, ...] for valid rows only."""
+def load_chip_list(
+    xlsx_path: Path,
+    sheet_name: str = DEFAULT_XLSX_SHEET,
+    mpn_header: str = DEFAULT_XLSX_MPN_HEADER,
+    mfr_header: str = DEFAULT_XLSX_MFR_HEADER,
+) -> tuple[list[dict], list[dict]]:
+    """Return ([{row, input_mpn, expected_mfr}, ...], skipped[]) — dedup'd by MPN.
+
+    Source-of-truth contract (per user 2026-05-20):
+      file:   ref/Shortage Emergency Response List_v2.xlsx
+      sheet:  "Part List Modify"
+      MPN:    column with header "Manufacture Part Number" (cells may have a
+              leading non-breaking space U+00A0 — stripped here)
+      mfr:    column with header "Manufacture" — informational only; first
+              occurrence's value wins on dedup.
+
+    Header row is row 1, data from row 2. Columns are looked up by HEADER NAME
+    so they tolerate spreadsheet reshuffling. Multiple input rows with the same
+    MPN (e.g. different projects ordering the same part) get collapsed to one.
+    """
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
-    ws = wb.worksheets[0]
+    if sheet_name not in wb.sheetnames:
+        raise ValueError(
+            f"Sheet {sheet_name!r} not found in {xlsx_path}; "
+            f"available: {wb.sheetnames}"
+        )
+    ws = wb[sheet_name]
+
+    headers = {ws.cell(row=1, column=c).value: c for c in range(1, ws.max_column + 1)}
+    mpn_col = headers.get(mpn_header)
+    mfr_col = headers.get(mfr_header)
+    if mpn_col is None:
+        raise ValueError(
+            f"Header {mpn_header!r} not found in row 1 of {sheet_name!r}; "
+            f"got: {list(headers)}"
+        )
+
     chips: list[dict] = []
     skipped: list[dict] = []
-    for r in range(5, ws.max_row + 1):
-        mpn = ws.cell(row=r, column=1).value
-        mfr = ws.cell(row=r, column=2).value
-        mpn_s = str(mpn).strip() if mpn is not None else ""
-        mfr_s = str(mfr).strip() if mfr is not None else ""
+    seen_mpns: set[str] = set()
+    for r in range(2, ws.max_row + 1):
+        mpn_raw = ws.cell(row=r, column=mpn_col).value
+        mfr_raw = ws.cell(row=r, column=mfr_col).value if mfr_col else None
+        # Strip ASCII whitespace AND U+00A0 (the master file uses NBSP prefixes
+        # on some MPNs like " PFS132") so dedup matches across encodings.
+        mpn_s = (str(mpn_raw).replace("\xa0", " ").strip()
+                 if mpn_raw is not None else "")
+        mfr_s = (str(mfr_raw).replace("\xa0", " ").strip()
+                 if mfr_raw is not None else "")
         if not _looks_like_real_mpn(mpn_s):
             skipped.append({"row": r, "raw_mpn": mpn_s, "raw_mfr": mfr_s,
                             "reason": "missing or non-MPN placeholder"})
             continue
+        if mpn_s in seen_mpns:
+            skipped.append({"row": r, "raw_mpn": mpn_s, "raw_mfr": mfr_s,
+                            "reason": f"duplicate MPN (already loaded)"})
+            continue
+        seen_mpns.add(mpn_s)
         chips.append({"row": r, "input_mpn": mpn_s, "expected_mfr": mfr_s})
     return chips, skipped
 
@@ -761,7 +807,7 @@ def write_xlsx(rows: list[dict], columns: list[str], path: Path, sheet_name: str
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = sheet_name[:31] or "Sheet1"
-    header_font = Font(bold=True)
+    header_font = Font(bold=True, name="Calibri")
     header_fill = PatternFill(start_color="FFE2E2E2", end_color="FFE2E2E2", fill_type="solid")
     for col_idx, col in enumerate(columns, 1):
         c = ws.cell(row=1, column=col_idx, value=col)
@@ -923,15 +969,23 @@ def write_summary_md(
             lines.append(f"| …and {len(mismatches) - 30} more (see `batch_index.csv`) |  |  |  |")
     lines.append("")
 
-    # Skipped rows
+    # Skipped rows — collapse the high-cardinality "duplicate" reason into a
+    # single count row; itemize the rare "missing/placeholder" rows fully.
     if skipped:
+        dup_skipped = [s for s in skipped if "duplicate" in s.get("reason", "")]
+        other_skipped = [s for s in skipped if "duplicate" not in s.get("reason", "")]
         lines.append("## Skipped xlsx rows")
         lines.append("")
         lines.append("| row | raw_mpn | raw_mfr | reason |")
         lines.append("|---|---|---|---|")
-        for s in skipped:
+        for s in other_skipped:
             lines.append(
                 f"| {s['row']} | `{s['raw_mpn']}` | {s['raw_mfr']} | {s['reason']} |"
+            )
+        if dup_skipped:
+            lines.append(
+                f"| — | — | — | {len(dup_skipped)} duplicate MPN rows "
+                f"collapsed (dedup at load time) |"
             )
         lines.append("")
 

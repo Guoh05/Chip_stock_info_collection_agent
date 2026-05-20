@@ -1,8 +1,9 @@
 # Merge for procurement — rules & output contract
 
 Procurement-facing merge of the two `batch_index.csv` snapshots (API track +
-Scraper track) into a single Excel workbook with **现货 (in-stock) rows
-visually highlighted**, so buyers can scan one file and see what's available.
+Scraper track) into a single Excel workbook with project-level shortage
+metadata appended and a priority view of high-risk in-stock parts on
+sheet 1.
 
 - Script: `common/merge_batch_for_procurement.py`
 - Output root: `test/merged/Merge_<api_ts>__<scr_ts>/`
@@ -12,114 +13,151 @@ visually highlighted**, so buyers can scan one file and see what's available.
 
 - API CSV: `test/api_test/BatchTest_<ts>/batch_index.csv`
 - Scraper CSV: `test/scraper_test/BatchTest_<ts>/batch_index.csv`
+- Chip metadata: `ref/Shortage Emergency Response List_v2.xlsx` (sheet `Part List Modify`)
 
-Schemas: `api/doc/batch_output_schema.md`, `scraper/doc/batch_output_schema.md`.
-Both CSVs share 24 columns; scraper adds `elapsed_sec`, `num_variants` (dropped on merge).
+Schemas: `api/doc/batch_output_schema.md`, `scraper/doc/batch_output_schema.md`. Both CSVs share 24 columns; scraper adds `elapsed_sec`, `num_variants` (dropped on merge).
 
-Default: script auto-picks the newest `BatchTest_*` in each track. Override with `--api` / `--scr` / `--out`.
+Default: script auto-picks the newest standard `BatchTest_<YYYYMMDD>_<HH>_<MM>_<SS>/` folder in each track (probe folders with extra suffixes like `..._bom2buy` are skipped — their schemas may differ). Override with `--api` / `--scr` / `--out` / `--chip-list`.
 
 ## Merge rules (in order)
 
-1. **Status filter.** Keep `status == "ok"` rows only. Drop every non-ok row from both tracks (timeouts, blockers, errors).
+1. **Status filter.** Keep `status == "ok"` rows only on both tracks.
 2. **HQEW filter.** Drop every row where `source` starts with `HQEW_` (per business decision — 华强电子网 not currently trusted as a procurement signal).
-3. **API-wins per (input_mpn, source).** For every `(mpn, source)` pair that has at least one status=ok row in the API CSV, **drop all scraper rows for the same pair** — even when the API rows are all qty=0 or null. This is strict by design (predictable provenance); the discrepancy goes to Sheet 3 instead of corrupting Sheet 2.
-
+3. **Returned-MPN match filter.** Drop every row where the upstream `returned_mpn` does NOT equal `input_mpn` after stripping punctuation and case (`re.sub(r"[^A-Za-z0-9]", "", s).upper()`). Catches fuzzy-search drift (e.g. LCSC returned `GD32E230K6T6` when we asked for `GD32E230K4T6`) and scraper rows with empty `returned_mpn`. Implemented via `returned_mpn_matches_input()`.
+4. **API-wins per `(input_mpn, source)`.** For every `(mpn, source)` pair that has at least one status=ok row in the API CSV, **drop all scraper rows for the same pair** — even when the API rows are all qty=0 or null. Predictable provenance; the discrepancy goes to Sheet 3 instead of corrupting Sheet 2.
    Practical effect: scraper contributes only on sources the API track doesn't cover (Future, RSOnline, OneYac, ICKey, Rochester, …) plus any `(mpn, source)` where the API call itself failed.
-4. **mfr_match kept.** Rows with `mfr_match=False` (channel returned a different manufacturer than expected — common on the scraper side: ~47%) are **kept**, not silently dropped. The `mfr_match` column is preserved so procurement can filter in Excel.
-5. **Mirror rows flagged, not dropped.** A new `is_mirror` column flags rows that represent the same physical inventory counted twice:
-   - Arrow: `warehouse` contains `" — mirror"` (per `api/doc/batch_output_schema.md` §Arrow mirrors).
-   - Future scraper: `warehouse_idx > 1` AND warehouse contains `(global)` (per scraper schema §Future mirrors).
+5. **mfr_match kept.** Rows with `mfr_match=False` are kept; the flag is preserved (as `ref_mfr_match`) so procurement can filter in Excel.
+6. **Mirror rows flagged, not dropped.** `ref_is_mirror=True` marks:
+   - Arrow: `warehouse` contains `" — mirror"`.
+   - Future scraper: `warehouse_idx > 1` AND warehouse contains `(global)`.
    - Element14 site-level: `warehouse` matches `Element14 (…)` shape.
+7. **Chip-list enrichment.** Every output row is joined to the chip list on a normalized MPN key (`str.strip().replace("\xa0", "")`). The chip list has duplicates (one chip across multiple PCBAs); **only the first matching row** is used per MPN. Both A–D (Category / Project / EMS / 12NC_PCBA) and G–K (Quantity / Currency / Current Price / Type / risk) come from that first row.
+8. **Lead time conversion.** Upstream `lead_time_days` (integer days) is converted to **`Lead Time (Week)` with 1 decimal** (`round(days / 7, 1)`).
 
-   They're kept because Sheet 1 sorts mirrors adjacent (visually obvious) and no row-wise sum is computed.
+## In-stock & "high-risk in-stock"
 
-## In-stock definition (Sheet 1 / highlight rule)
+`in_stock` (bool column) is computed at row level: `(stockpool_qty is not None) AND (stockpool_qty > 0)`. `None`-qty rows are factory-lead-time only and **must not** be treated as 现货.
 
-```
-in_stock = (stockpool_qty is not None) AND (stockpool_qty > 0)
-```
-
-Both schemas guarantee:
-
-| qty value | meaning | in_stock? |
+| qty value | meaning | `in_stock` |
 |---|---|---|
-| `> 0` | real warehouse stock | **yes** |
-| `0` | out of stock | no |
-| `None` / empty | unbounded factory order — lead-time only | **no** |
+| `> 0` | real warehouse stock | **TRUE** |
+| `0` | out of stock | FALSE |
+| `None` / empty | unbounded factory order — lead-time only | FALSE |
 
-No `ship_text` parsing is needed; the quantity column already encodes the
-distinction. **Do NOT highlight `None`-qty rows as 现货** — they represent
-"原厂标准交货期 N 周" / "Factory Lead Time", not committed inventory.
+**Sheet 1 priority view** narrows that further: `risk == "high"` (case-insensitive on chip-list `risk`) AND `Available Quantity > 0`. Rows without a chip-list match (`risk` is null) are excluded from Sheet 1.
 
 ## Cross-validation side-channel (Sheet 3)
 
-For every `(mpn, source)` where BOTH tracks have status=ok rows (= LCSC,
-DIGIKEY, WEEN overlaps in practice), compare the qty sets:
+For every `(mpn, source)` where BOTH tracks have status=ok rows (= LCSC, DIGIKEY, WEEN overlaps in practice), compare the qty sets:
 
-- `match` — some API warehouse qty equals scraper qty → silent (good signal).
-- `one_side_null` — one side has `qty=None` while the other has a number → silent (different shape, not a conflict).
-- `mismatch` — both sides have numbers and no overlap → **copy scraper rows to Sheet 3** with a `note` column like `API max qty 582295 vs scraper max 547550`.
+- `match` — some API warehouse qty equals scraper qty → silent.
+- `one_side_null` — one side has `qty=None` → silent (different shape, not a conflict).
+- `mismatch` — both sides numeric and no overlap → **copy scraper rows to Sheet 3** with a `note` column like `"API max qty 582295 vs scraper max 547550"`.
 
-Sheet 3 is for QA, not for procurement. It surfaces:
-- Scraper bugs (wrong number / aggregation across variants).
-- Real-world drift if the two batches ran far apart in time.
-- Inventory pulled between snapshots.
+Sheet 3 is for QA; not for procurement.
 
 ## Output workbook
 
-| Sheet | Filter | Sort | Highlight |
-|---|---|---|---|
-| `现货优先` | `in_stock == True` | `input_mpn`, then `stockpool_qty desc`, then `source` | All rows green (`FFC6EFCE`) |
-| `全量数据` | All merged rows (post-filter) | `input_mpn`, `source`, API before scraper, then `warehouse_idx` | Green if `in_stock`; light grey (`FFEEEEEE`) if `stockpool_qty == 0`; no fill for `None`-qty (factory lead) |
-| `scraper参考_库存不一致` | Mismatched scraper rows only (see above) | `input_mpn`, `source` | None |
-
-Shared styling: header bold + light-grey fill, freeze panes at A2, column widths auto-fit (capped 10–50 chars). Matches the convention used by `batch_api_test.py` / `batch_scraper_test.py`.
-
-### Sheet 1 & 2 columns (in order)
-
-`input_mpn, expected_mfr, source, track, in_stock, returned_mpn, vendor_sku, returned_mfr, mfr_match, warehouse, warehouse_idx, ships_from, stockpool_qty, ship_text, lead_time_days, moq, min_break_qty, price_at_min_qty, max_break_qty, price_at_max_qty, num_price_tiers, currency, is_mirror, datasheet_url, status, run_subdir, error`
-
-New columns added by the merge (not in either input CSV):
-
-| Column | Type | Meaning |
+| Sheet name | Filter | Highlight |
 |---|---|---|
-| `track` | str | `"api"` or `"scraper"` — which CSV the row originated from |
-| `in_stock` | bool | per the rule above |
-| `is_mirror` | bool | per the mirror-row flagging above |
+| `高风险有货` | `risk == "high"` AND `Available Quantity > 0` | **None** — every row is in-stock by definition, so a uniform green fill would be uninformative |
+| `全量数据` | All merged rows (post-filter) | Green (`FFC6EFCE`) if `in_stock`; light grey (`FFEEEEEE`) if `Available Quantity == 0`; no fill for `None`-qty (factory lead) |
+| `scraper参考_库存不一致` | Mismatched scraper rows only (see above) | None |
 
-### Sheet 3 columns
+**Unified sort across all three sheets**: `risk` (`high` → `low` → other → null) → `Manufacture Part Number` (asc) → `Broker name` (asc) → `Available Quantity` (desc). Encoded by `_sort_key()` in the merge script.
 
-`input_mpn, expected_mfr, source, in_stock, returned_mpn, warehouse, stockpool_qty, ship_text, lead_time_days, moq, price_at_min_qty, currency, datasheet_url, note, run_subdir`
+Shared styling:
+- Header row: bold + `wrap_text` (for the `"Trade \nCurrency"` two-line header), colored by **column range**:
+  - **A–K** (cols 1–11, chip-list metadata + MPN/Manufacture): dark blue `#1F4E78` background + white font.
+  - **L–AC** (cols 12–29, distributor data + 3 business-fill cols): light orange `#FCE4D6` background + black font.
+  - **AD onwards** (cols 30+, `ref_*` audit fields): dark grey `#595959` background + white font.
+- Freeze panes at A2.
+- AutoFilter dropdowns on the full data range (`A1:<last_col><last_row>`) — procurement can filter in Excel.
+- Column widths: hardcoded from `ref/merged_header_example.xlsx` (sheet `header`), captured in the `COLUMN_WIDTHS` dict in the script. Anything not in the dict falls back to auto-fit (capped 10–50 chars).
 
-`note` is added by the merge: `"API max qty X vs scraper max Y"`.
+### Column list (Sheet 1 & Sheet 2 — 38 cols, in order)
+
+```
+Category, Project, EMS/Finish Goods, 12NC_PCBA,
+Manufacture Part Number, Manufacture,
+Quantity, Currency, Current Price, Type, risk,
+Broker name, Data collect method, in_stock,
+Warehouse/vender, Stock Location, Available Quantity,
+ship infor after order placed, Lead Time (Week),
+MOQ, Minimum order qty, Unit price (min qty),
+Maximum order qty, Unit price (max qty), Number of price tiers,
+Trade \nCurrency,
+Date of Code, Reel/Cut Reel, Certificate of Conformity(Yes/No),
+ref_Warehouse/vender ID, ref_returned_mpn, ref_vendor_sku,
+ref_returned_mfr, ref_mfr_match, ref_is_mirror, ref_datasheet_url,
+ref_status, ref_error
+```
+
+Header → source mapping is defined by `COLUMN_SOURCE_MAP` in the script. Each entry is one of:
+
+- `("merge", <csv_field>)` — copy from upstream CSV row (rename only).
+- `("chip",  <chip_list_header>)` — first-row chip-list lookup.
+- `("lead_time", "lead_time_days")` — days-to-weeks transform.
+- `("blank", None)` — empty placeholder (procurement fills in later).
+
+Three "blank" columns (`Date of Code`, `Reel/Cut Reel`, `Certificate of Conformity(Yes/No)`) are written empty for procurement to fill.
+
+### Sheet 3 columns (23 cols, in order)
+
+```
+Category, Project, EMS/Finish Goods, 12NC_PCBA,
+Manufacture Part Number, Manufacture,
+Quantity, Currency, Current Price, Type, risk,
+Broker name, in_stock,
+ref_returned_mpn, Warehouse/vender, Available Quantity,
+ship infor after order placed, Lead Time (Week),
+MOQ, Unit price (min qty), Trade \nCurrency,
+ref_datasheet_url, note
+```
+
+The `note` column is generated by the merge (`"API max qty X vs scraper max Y"`).
+
+### Dropped from upstream
+
+- `run_subdir` — marked DELETE in `ref/merged_output_fields_mapping.xlsx`.
+- Upstream scraper-only `elapsed_sec`, `num_variants` — not in mapping.
 
 ## Currency
 
-Left as-is per row (`USD`, `RMB`, `CNY`, `SGD`, …). No FX normalisation in v1.
-Cross-source price comparison requires an external FX table downstream.
+Two currency-shaped columns exist and **mean different things**:
+
+| Column | Source | Meaning |
+|---|---|---|
+| `Currency` | chip list col H | the buying currency the EMS expects to pay in |
+| `Trade \nCurrency` (literal newline) | upstream `currency` | the distributor's quoted currency on that row |
+
+No FX normalisation in v1.
 
 ## CLI
 
 ```bash
 python common/merge_batch_for_procurement.py \
-    [--api <api_BatchTest_dir>] \
-    [--scr <scraper_BatchTest_dir>] \
-    [--out <output_dir>]
+    [--api  <api_BatchTest_dir>] \
+    [--scr  <scraper_BatchTest_dir>] \
+    [--out  <output_dir>] \
+    [--chip-list <xlsx_path>]
 ```
 
-Run with no args = newest batches in each track.
+Run with no args = newest batches in each track + default chip list.
 
 ## Out of scope (v1)
 
 - FX conversion / unified-currency column.
 - Per-chip "best deal" aggregation across sources.
 - Trend / delta vs previous batch.
-- README auto-status block (the merge is not yet part of the batch driver
-  pipeline, so its status isn't auto-rendered into any README).
+- README auto-status block.
+- Aggregating chip-list G–K across MPN dups (e.g. summing `Quantity` across projects) — first-row only by design.
 
-## Known data quirks worth knowing
+## Known data quirks
 
-- **LCSC scraper sometimes returns `status=ok` with empty `stockpool_qty`.** The scraper reached the product page but didn't parse a number. This is a real scraper bug; the merge treats it correctly as `one_side_null` against API, so these never end up on Sheet 3.
-- **API DigiKey emits 3–5 rows per MPN** (US warehouse + Factory + per-SKU variants). Sheet 1 shows them adjacent, sorted by qty desc within the MPN.
+- **LCSC scraper sometimes returns `status=ok` with empty `stockpool_qty`.** The scraper reached the product page but didn't parse a number. Merge treats this correctly as `one_side_null` against API; never lands on Sheet 3.
+- **API DigiKey emits 3–5 rows per MPN** (US warehouse + Factory + per-SKU variants). Sheet 1 shows them adjacent.
 - **API LCSC emits 2 rows per MPN** (广东仓 + 江苏仓). Either or both can be in stock.
-- **Scraper LCSC / DIGIKEY emit 1 row per MPN with empty `warehouse`** — that's an aggregate, not a per-warehouse view. Sheet 1 sort-by-qty handles it fine.
+- **Scraper LCSC / DIGIKEY emit 1 row per MPN with empty `warehouse`** — that's an aggregate, not a per-warehouse view.
+- **Chip-list MPN normalization** — chip list has at least one row with leading `\xa0` (non-breaking space). Both sides are normalized with `.strip().replace("\xa0", "")` before matching.
+- **High-risk chips with zero coverage** — if a chip-list MPN with `risk=high` doesn't appear anywhere in either batch (no `status=ok` row), it's simply absent from the merged xlsx. Check the run summary line `"no chip-list row"` count and cross-reference the chip list to find these.

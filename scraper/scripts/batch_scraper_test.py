@@ -1,20 +1,34 @@
-"""Batch-run every chip in ref/Chip_DataSource_Master.xlsx through the four
-working scrapers (LCSC, Digikey, HQEW, Future) and consolidate results.
+"""Batch-run every chip in the master sheet through the 9 working scrapers
+(LCSC, Digikey, HQEW, Future, RSONLINE, ONEYAC, ICKEY, Rochester + bom2buy
+as a post-step) and consolidate results.
 
-Each (input_mpn, channel) is executed as a SUBPROCESS so a hung browser or
-crashed scraper can be killed cleanly with a hard wallclock timeout — that is
-the only reliable way to keep a multi-hour batch moving.
+The first 8 channels run in parallel per chip via a ThreadPoolExecutor, each
+as a SUBPROCESS so a hung browser or crashed scraper is killed cleanly with a
+hard wallclock timeout. The 9th channel (bom2buy) runs SEQUENTIALLY as a
+post-step because it drives the user's Opera browser via Playwright with
+exclusive user-data-dir lock — it cannot run alongside other channels.
 
 Per-channel timeouts (seconds, observed-budget × 1.4 safety):
     LCSC v3     240
     Digikey     180
     HQEW         90
     Future      300
+    RSONLINE     90
+    ONEYAC      120
+    ICKEY       150
+    Rochester   180
+    bom2buy     post-step, in-script subprocess (1 h hard cap)
+
+Master input (2026-05-20+):
+    ref/Shortage Emergency Response List_v2.xlsx, sheet `Part List Modify`,
+    column `Manufacture Part Number`. Mfr column `Manufacture` is reference
+    only. MPNs are deduped (107 unique from 280 raw rows in v2).
+    Legacy `Chip_DataSource_Master.xlsx` (header on row 4) is still supported
+    if explicitly passed via --xlsx — `load_chip_list` detects and falls back.
 
 Outputs under `test/scraper_test/BatchTest_<YYYYMMDD>_<HH_MM_SS>/`:
     batch_summary.md                — TL;DR + per-channel stats + highlights
-    batch_index.csv / .xlsx         — long form (one row per MPN × channel)
-    batch_compare.csv / .xlsx       — wide form (~43 cols, all 4 channels)
+    batch_index.csv / .xlsx         — v3 long form (warehouse-exploded)
     batch_index.json                — machine-readable long form
     batch_input.csv                 — verbatim (MPN, expected_mfr) from xlsx
     failures.md                     — non-ok rows grouped by channel
@@ -26,6 +40,14 @@ Usage:
     .venv/Scripts/python.exe scraper/scripts/batch_scraper_test.py --limit 3
     .venv/Scripts/python.exe scraper/scripts/batch_scraper_test.py --only LCSC,HQEW
     .venv/Scripts/python.exe scraper/scripts/batch_scraper_test.py --resume
+    .venv/Scripts/python.exe scraper/scripts/batch_scraper_test.py --no-bom2buy
+
+bom2buy preconditions (default ON, --no-bom2buy to skip):
+    1. Open Opera, navigate to https://www.bom2buy.com/, solve IconCaptcha once.
+    2. FULLY close Opera (Task Manager → kill all opera.exe if needed).
+    3. Run this script.
+    If the captcha session is expired at run time the batch still completes;
+    bom2buy can be backfilled later with scrape_bom2buy.py + _merge_bom2buy_into_batch.py.
 """
 
 from __future__ import annotations
@@ -50,7 +72,10 @@ from openpyxl.utils import get_column_letter
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = PROJECT_ROOT / "scraper" / "scripts"
 SCRAPER_TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
-DEFAULT_XLSX = PROJECT_ROOT / "ref" / "Chip_DataSource_Master.xlsx"
+DEFAULT_XLSX = PROJECT_ROOT / "ref" / "Shortage Emergency Response List_v2.xlsx"
+DEFAULT_SHEET = "Part List Modify"
+DEFAULT_MPN_COL = "Manufacture Part Number"
+DEFAULT_MFR_COL = "Manufacture"
 
 CHANNELS: dict[str, dict[str, Any]] = {
     "LCSC":      {"script": "scrape_lcsc_v3.py",  "timeout": 240},
@@ -121,21 +146,75 @@ def _parse_price_str(price_str) -> float | None:
 # --- input loading ---------------------------------------------------------
 
 
-def load_chip_list(xlsx_path: Path) -> tuple[list[dict], list[dict]]:
-    """Return (chips, skipped). Sheet 1, header at row 4, data from row 5."""
+def _clean_mpn_str(s: object) -> str:
+    """Strip whitespace including non-breaking spaces (U+00A0) that sneak into
+    MPNs copy-pasted from Excel."""
+    if s is None:
+        return ""
+    return str(s).strip().strip("\xa0").strip()
+
+
+def load_chip_list(
+    xlsx_path: Path,
+    sheet: str = DEFAULT_SHEET,
+    mpn_col: str = DEFAULT_MPN_COL,
+    mfr_col: str = DEFAULT_MFR_COL,
+) -> tuple[list[dict], list[dict]]:
+    """Read chip list from a header-row-1 sheet, dedup by MPN.
+
+    The 2026-05-20+ master is `ref/Shortage Emergency Response List_v2.xlsx`,
+    sheet `Part List Modify` — header on row 1, data from row 2. MPN col is
+    `Manufacture Part Number`, mfr col is `Manufacture`. The mfr value is
+    reference-only (we keep the first occurrence's mfr after dedup).
+
+    Returns (chips, skipped). `chips` is one entry per UNIQUE MPN; `skipped`
+    captures rows whose MPN looks like a placeholder, plus duplicate-MPN rows
+    (with reason="duplicate; first kept" — useful for audit).
+
+    Backward-compat: the legacy `ref/Chip_DataSource_Master.xlsx` had header on
+    row 4 (so data from row 5) with MPN in col 1 and mfr in col 2. Pass
+    `sheet=None` to fall back to that layout, OR just keep using the legacy
+    file and override `--xlsx`.
+    """
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
-    ws = wb.worksheets[0]
+
+    if sheet is None or sheet not in wb.sheetnames:
+        # Legacy layout: first sheet, header row 4, MPN col 1, mfr col 2.
+        ws = wb.worksheets[0]
+        rows_iter = ((r, ws.cell(row=r, column=1).value, ws.cell(row=r, column=2).value)
+                     for r in range(5, ws.max_row + 1))
+    else:
+        ws = wb[sheet]
+        # Header row 1: build a column-name → index map
+        header = {str(c.value).strip(): c.column_letter for c in ws[1] if c.value}
+        if mpn_col not in header:
+            raise KeyError(f"Column {mpn_col!r} not found in sheet {sheet!r}. "
+                           f"Available: {list(header.keys())}")
+        mpn_letter = header[mpn_col]
+        mfr_letter = header.get(mfr_col)
+        rows_iter = (
+            (r,
+             ws[f"{mpn_letter}{r}"].value,
+             ws[f"{mfr_letter}{r}"].value if mfr_letter else None)
+            for r in range(2, ws.max_row + 1)
+        )
+
     chips: list[dict] = []
     skipped: list[dict] = []
-    for r in range(5, ws.max_row + 1):
-        mpn = ws.cell(row=r, column=1).value
-        mfr = ws.cell(row=r, column=2).value
-        mpn_s = str(mpn).strip() if mpn is not None else ""
-        mfr_s = str(mfr).strip() if mfr is not None else ""
+    seen_mpns: set[str] = set()
+    for r, mpn, mfr in rows_iter:
+        mpn_s = _clean_mpn_str(mpn)
+        mfr_s = _clean_mpn_str(mfr)
         if not _looks_like_real_mpn(mpn_s):
-            skipped.append({"row": r, "raw_mpn": mpn_s, "raw_mfr": mfr_s,
-                            "reason": "missing or non-MPN placeholder"})
+            if mpn_s or mfr_s:  # skip silently-empty rows; capture non-empty placeholders
+                skipped.append({"row": r, "raw_mpn": mpn_s, "raw_mfr": mfr_s,
+                                "reason": "missing or non-MPN placeholder"})
             continue
+        if mpn_s in seen_mpns:
+            skipped.append({"row": r, "raw_mpn": mpn_s, "raw_mfr": mfr_s,
+                            "reason": "duplicate; first occurrence kept"})
+            continue
+        seen_mpns.add(mpn_s)
         chips.append({"row": r, "input_mpn": mpn_s, "expected_mfr": mfr_s})
     return chips, skipped
 
@@ -903,7 +982,15 @@ def main(argv: list[str]) -> int:
                         help="Semicolon-separated MPN list — overrides --xlsx entirely. "
                              "(Semicolon, not comma, because some MPNs contain commas — "
                              "e.g. `BT168GW,115`.) Optional `MPN:expected_mfr` syntax "
-                             "per entry: 'STM32G030F6P6:STM;BT168GW,115:WEEN'.")
+                             "per entry: 'STM32G030F6P6:STM;BT168GW,115:WEEN'. "
+                             "NB: MPNs containing `:` (e.g. typo'd `BTA206X-800CT:127`) "
+                             "will be wrongly chopped by the `:` separator — use --mpns-file "
+                             "with tab separator for those.")
+    parser.add_argument("--mpns-file", type=str, default=None,
+                        help="Tab-separated file: one MPN per line, format 'MPN<TAB>MFR' "
+                             "(MFR optional). Tab is the separator because some real MPNs "
+                             "contain ':' . Lines starting with `#` are comments. Overrides "
+                             "--xlsx and takes precedence over --mpns when both are given.")
     parser.add_argument("--limit", type=int, default=None,
                         help="Process only the first N valid MPNs (dry-run aid).")
     parser.add_argument("--only", type=str, default=None,
@@ -921,10 +1008,36 @@ def main(argv: list[str]) -> int:
                              "channel hits a different domain so there's no per-vendor "
                              "rate-limit collision. Wallclock per chip drops from sum(channels) "
                              "to max(channels), typically a 50–60%% speedup.")
+    parser.add_argument("--with-bom2buy", dest="with_bom2buy", action="store_true",
+                        default=True,
+                        help="After the main sweep, run scrape_bom2buy.py for all MPNs and "
+                             "merge into batch_index. Default ON. Requires Opera fully closed "
+                             "and a captcha-cleared Opera session. If the captcha session is "
+                             "expired (script exit code 3) the batch still completes; the user "
+                             "is told to refresh Opera + re-run scrape_bom2buy.py manually.")
+    parser.add_argument("--no-bom2buy", dest="with_bom2buy", action="store_false",
+                        help="Skip the bom2buy post-step (e.g. for headless CI runs that can't "
+                             "drive Opera).")
     args = parser.parse_args(argv[1:])
 
     channels_used = _parse_only(args.only)
-    if args.mpns:
+    if args.mpns_file:
+        # Tab-separated file: one MPN per line, format `MPN\tMFR` (MFR optional).
+        # Tab is the separator because some real MPNs contain ":" (e.g. typo'd
+        # `BTA206X-800CT:127`). Lines starting with `#` are comments.
+        chips = []
+        skipped = []
+        for i, line in enumerate(Path(args.mpns_file).read_text(encoding="utf-8").splitlines()):
+            line = line.rstrip("\r\n")
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            if "\t" in line:
+                mpn_s, mfr_s = line.split("\t", 1)
+            else:
+                mpn_s, mfr_s = line, ""
+            chips.append({"row": i + 1, "input_mpn": mpn_s.strip(), "expected_mfr": mfr_s.strip()})
+        print(f"Loaded {len(chips)} chip rows from --mpns-file (xlsx ignored)")
+    elif args.mpns:
         chips = []
         skipped = []
         for i, raw in enumerate(args.mpns.split(";")):
@@ -1045,8 +1158,80 @@ def main(argv: list[str]) -> int:
     )
 
     n_cells = len({(r["input_mpn"], r["source"]) for r in index_rows})
-    print(f"\nDone. {n_cells} cells × ~{len(index_rows)/max(n_cells,1):.1f} warehouse rows/cell = {len(index_rows)} index rows.")
+    print(f"\nDone (main sweep). {n_cells} cells × ~{len(index_rows)/max(n_cells,1):.1f} warehouse rows/cell = {len(index_rows)} index rows.")
     print(f"Wrote: {batch_dir}")
+
+    # ─────────────── bom2buy post-step (default ON) ────────────────
+    # bom2buy is the 9th source but can't run alongside other channels
+    # (Opera-only, exclusive user-data-dir lock). We invoke scrape_bom2buy.py
+    # AFTER the main sweep against the same batch folder, then re-merge.
+    # If the captcha session is expired (exit code 3), we print a clear
+    # user-action prompt and STILL complete the batch — bom2buy can be
+    # backfilled manually.
+    if args.with_bom2buy:
+        scripts_dir = PROJECT_ROOT / "scraper" / "scripts"
+        bom2buy_script = scripts_dir / "scrape_bom2buy.py"
+        merge_script = scripts_dir / "_merge_bom2buy_into_batch.py"
+        if not bom2buy_script.exists():
+            print("[bom2buy] scrape_bom2buy.py not found — skipping post-step")
+        else:
+            # Tab-separated MPN file for the scraper (covers MPNs with `:` like
+            # the typo'd `BTA206X-800CT:127`).
+            mpns_file = batch_dir / ".bom2buy_input.tsv"
+            with open(mpns_file, "w", encoding="utf-8", newline="\n") as fp:
+                fp.write("# auto-generated by batch_scraper_test.py — full chip list for bom2buy post-step\n")
+                for c in chips:
+                    fp.write(f"{c['input_mpn']}\t{c['expected_mfr']}\n" if c['expected_mfr']
+                             else f"{c['input_mpn']}\n")
+            print(f"\n[bom2buy] starting post-step (--with-bom2buy default ON); {len(chips)} MPNs")
+            try:
+                result = subprocess.run(
+                    [sys.executable, str(bom2buy_script),
+                     "--mpns-file", str(mpns_file),
+                     "--out", str(batch_dir)],
+                    check=False, timeout=60 * 60,  # 1h hard cap
+                )
+                rc = result.returncode
+            except subprocess.TimeoutExpired:
+                rc = -1
+                print("[bom2buy] HARD TIMEOUT (1 h) — partial result; manual retry possible")
+            except Exception as e:
+                rc = -2
+                print(f"[bom2buy] launch failed: {e} — skipping merge")
+            if rc == 0:
+                print("[bom2buy] post-step ok")
+            elif rc == 3:
+                print(
+                    "\n" + "=" * 70 + "\n"
+                    "[bom2buy] ⚠ SESSION EXPIRED — bom2buy was skipped.\n"
+                    "  To backfill bom2buy for this batch, AFTER the batch finishes:\n"
+                    "  1. Open Opera, navigate to https://www.bom2buy.com/ and solve the\n"
+                    "     IconCaptcha (just click & complete it once).\n"
+                    "  2. FULLY close Opera (Task Manager → kill all opera.exe if needed).\n"
+                    "  3. Run:\n"
+                    f"       .venv/Scripts/python.exe scraper/scripts/scrape_bom2buy.py \\\n"
+                    f"           --mpns-file {mpns_file.relative_to(PROJECT_ROOT)} \\\n"
+                    f"           --out {batch_dir.relative_to(PROJECT_ROOT)}\n"
+                    f"       .venv/Scripts/python.exe scraper/scripts/_merge_bom2buy_into_batch.py \\\n"
+                    f"           {batch_dir.relative_to(PROJECT_ROOT)}\n"
+                    "  Until then, the batch is complete EXCEPT for bom2buy rows.\n"
+                    + "=" * 70
+                )
+            else:
+                print(f"[bom2buy] post-step exit code {rc} — proceeding with whatever cells were scraped")
+            # Run merge regardless of bom2buy exit code — it picks up whichever
+            # cell folders exist on disk. If zero cells exist, merge adds zero
+            # rows (safe).
+            if merge_script.exists():
+                try:
+                    subprocess.run(
+                        [sys.executable, str(merge_script), str(batch_dir)],
+                        check=False, timeout=120,
+                    )
+                except Exception as e:
+                    print(f"[bom2buy] merge step failed: {e}")
+            else:
+                print("[bom2buy] _merge_bom2buy_into_batch.py not found — batch_index.csv has no bom2buy rows")
 
     # Refresh scraper/README.md status block so bare-shell runs (no Claude Code
     # session, hence no PostToolUse hook) also keep the doc current. Best-

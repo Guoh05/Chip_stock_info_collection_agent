@@ -17,17 +17,17 @@ no browser, no anti-bot fight.
 | **Arrow Electronics** Pricing & Availability v4 | `GET api.arrow.com/itemservice/v4/en/search/list` | querystring `login` + `apikey` (BOTH required); same pair also nested in the `req` JSON payload. Inventory is republished across `webSites[].sources[]` so the same physical stock may appear under Verical and Arrow ACNA/EUROPE — dedup by `(fohQty, shipsFrom, shipsIn)` before summing. | ✅ |
 | Element14 / Farnell (e络盟) | `GET api.element14.com/catalog/products` | API key in querystring; default store `cn.element14.com`; uses `term=manuPartNum:<MPN>` (NOT `manuPartNumber`); `versionNumber` is NOT a valid param. Lead time `stock.leastLeadTime` is in **days** (not weeks). Quota: 2 req/s, 1,000/day. | ✅ |
 
-**Latest batch run:** `test/api_test/BatchTest_20260520_07_40_36/` — 103 MPNs × 5 source(s) = 515 (chip × source) pairs.
+**Latest batch run:** `test/api_test/BatchTest_20260520_07_40_36/` — 107 MPNs × 5 source(s) = 535 (chip × source) pairs.
 
 | Source | OK | No results | Failed | OK % |
 |---|---|---|---|---|
-| Mouser_贸泽 | 59 | 44 | 0 | 57.3 % |
-| DIGIKEY_得捷电子 | 60 | 43 | 0 | 58.3 % |
-| ELEMENT14_e络盟 | 43 | 60 | 0 | 41.7 % |
-| ARROW_艾睿 | 42 | 61 | 0 | 40.8 % |
-| LCSC_立创商城 | 72 | 31 | 0 | 69.9 % |
+| Mouser_贸泽 | 62 | 45 | 0 | 57.9 % |
+| DIGIKEY_得捷电子 | 63 | 44 | 0 | 58.9 % |
+| ELEMENT14_e络盟 | 46 | 61 | 0 | 43.0 % |
+| ARROW_艾睿 | 45 | 62 | 0 | 42.1 % |
+| LCSC_立创商城 | 75 | 32 | 0 | 70.1 % |
 
-**Manufacturer-name mismatches surfaced:** 32 — `Z0103MN,135` (ELEMENT14_e络盟: WEEN → STMICROELECTRONICS), `HT66F0021 8SOP TR` (Mouser_贸泽: HOLTEK → ROHM Semiconductor), `BT139-600E` (LCSC_立创商城: WEEN → minos(迈诺斯)), `BTA312-600B/DG,127` (ARROW_艾睿: WEEN → NXP Semiconductors), `BT131-600/DG,116` (ARROW_艾睿: WEEN → NXP Semiconductors), and 27 more.
+**Manufacturer-name mismatches surfaced:** 37 — `Z0103MN,135` (ELEMENT14_e络盟: WEEN → STMICROELECTRONICS), `HT66F0021 8SOP TR` (Mouser_贸泽: HOLTEK → ROHM Semiconductor), `BT139-600E` (LCSC_立创商城: WEEN → minos(迈诺斯)), `BTA312-600B/DG,127` (ARROW_艾睿: WEEN → NXP Semiconductors), `BT131-600/DG,116` (ARROW_艾睿: WEEN → NXP Semiconductors), and 32 more.
 
 <!-- END AUTO:status -->
 

@@ -8,20 +8,21 @@ For the high-level status and pass-rate report, see `scraper_report_v3.md`. For 
 
 ## Current status snapshot (2026-05-20)
 
-**Latest batch:** `test/scraper_test/BatchTest_20260520_07_40_03/` — 103 MPNs × 8 sources = 824 cells.
+**Latest batch:** `test/scraper_test/BatchTest_20260520_07_40_03/` — 107 MPNs × 9 sources = 963 cells.
 
 ### Working sources
 
 | Source | Script | OK | No results | Blocked | Failed | OK % |
 |---|---|---|---|---|---|---|
-| **LCSC_立创商城** | `scrape_lcsc_v3.py` | 81 | 22 | 0 | 0 | 78.6 % |
-| **DIGIKEY_得捷电子** | `scrape_digikey.py` | 57 | 0 | 3 | 43 | 55.3 % |
-| **HQEW_华强电子网** | `scrape_hqew.py` | 85 | 18 | 0 | 0 | 82.5 % |
-| **FUTURE_Future_Electronics** | `scrape_future.py` | 52 | 51 | 0 | 0 | 50.5 % |
-| **RSONLINE_RS欧时** | `scrape_rsonline.py` | 29 | 74 | 0 | 0 | 28.2 % |
-| **ONEYAC_唯样商城** | `scrape_oneyac.py` | 51 | 52 | 0 | 0 | 49.5 % |
-| **ICKEY_云汉芯城** | `scrape_ickey.py` | 83 | 20 | 0 | 0 | 80.6 % |
-| **ROCHESTER_Rochester_Electronics** | `scrape_rochester.py` | 9 | 94 | 0 | 0 | 8.7 % |
+| **LCSC_立创商城** | `scrape_lcsc_v3.py` | 84 | 23 | 0 | 0 | 78.5 % |
+| **DIGIKEY_得捷电子** | `scrape_digikey.py` | 60 | 0 | 3 | 44 | 56.1 % |
+| **HQEW_华强电子网** | `scrape_hqew.py` | 88 | 19 | 0 | 0 | 82.2 % |
+| **FUTURE_Future_Electronics** | `scrape_future.py` | 55 | 52 | 0 | 0 | 51.4 % |
+| **RSONLINE_RS欧时** | `scrape_rsonline.py` | 31 | 76 | 0 | 0 | 29.0 % |
+| **ONEYAC_唯样商城** | `scrape_oneyac.py` | 54 | 53 | 0 | 0 | 50.5 % |
+| **ICKEY_云汉芯城** | `scrape_ickey.py` | 86 | 21 | 0 | 0 | 80.4 % |
+| **ROCHESTER_Rochester_Electronics** | `scrape_rochester.py` | 12 | 95 | 0 | 0 | 11.2 % |
+| **BOM2BUY_买芯片网** | `scrape_bom2buy.py` | 64 | 43 | 0 | 0 | 59.8 % |
 
 ### Blocked sources
 
@@ -34,7 +35,6 @@ For the high-level status and pass-rate report, see `scraper_report_v3.md`. For 
 
 | Source | Why dropped |
 |---|---|
-| bom2buy 买芯片网 (bom2buy.com) | Global CAPTCHA gate — every page redirects to captcha.bom2buy.com. Needs paid solver. |
 | e络盟 Element14 (cn.element14.com) | Akamai BMP 403 (same family as Mouser/Arrow). Use api/scripts/api_element14.py (key pending). |
 | Verical (verical.com) | Arrow legacy site, half-broken (`系统错误` popup + WAF on repeat probes). User chose to drop. |
 | Chip1Stop (chip1stop.com) | 301-redirects to arrow.com after acquisition. No separate scraping path. |
@@ -47,11 +47,11 @@ _See the per-source sections below for technical details. This table is regenera
 
 ## Index
 
-**Working (8):** [LCSC](#1-lcsc-立创商城-szlcsccom) · [Digikey](#2-digikey-得捷电子-digikeycn) · [HQEW](#3-hqew-华强电子网-hqewcom) · [Future](#4-future-electronics-futureelectronicscom) · [RSONLINE](#5-rsonline-rs-欧时-rsonlinecn) · [ONEYAC](#6-oneyac-唯样商城-oneyaccom) · [ICKEY](#7-ickey-云汉芯城-ickeycn) · [Rochester](#8-rochester-electronics-roceleccom)
+**Working (9):** [LCSC](#1-lcsc-立创商城-szlcsccom) · [Digikey](#2-digikey-得捷电子-digikeycn) · [HQEW](#3-hqew-华强电子网-hqewcom) · [Future](#4-future-electronics-futureelectronicscom) · [RSONLINE](#5-rsonline-rs-欧时-rsonlinecn) · [ONEYAC](#6-oneyac-唯样商城-oneyaccom) · [ICKEY](#7-ickey-云汉芯城-ickeycn) · [Rochester](#8-rochester-electronics-roceleccom) · [bom2buy (session-dependent)](#11-bom2buy-买芯片网-bom2buycom)
 
 **Blocked (2):** [Mouser](#9-mouser-贸泽-mousercn--mousercom) · [Arrow](#10-arrow-艾睿电子-arrowcom)
 
-**Evaluated and dropped (4):** [bom2buy](#11-bom2buy-买芯片网-bom2buycom) · [cn.element14](#12-element14-e络盟-cnelement14com) · [verical](#13-verical-arrow-legacy-vericalcom) · [chip1stop](#14-chip1stop-acquired-by-arrow-chip1stopcom)
+**Evaluated and dropped (3):** [cn.element14](#12-element14-e络盟-cnelement14com) · [verical](#13-verical-arrow-legacy-vericalcom) · [chip1stop](#14-chip1stop-acquired-by-arrow-chip1stopcom)
 
 ---
 
@@ -625,21 +625,138 @@ Official **Arrow API** via `api/scripts/api_arrow.py`. Currently `missing_creden
 
 ## 11. bom2buy (买芯片网, bom2buy.com)
 
-### Status — ❌ dropped 2026-05-18
+**Script:** `scraper/scripts/scrape_bom2buy.py`
 
-### What was tested
+### Status — ✅ working (session-dependent) since 2026-05-20
 
-- `curl_cffi` GET on `https://www.bom2buy.com/<MPN>/` and `https://www.bom2buy.com/search?keyword=<MPN>`.
+Originally dropped 2026-05-18 due to a domain-wide IconCaptcha gate. Recovered 2026-05-20 by **reusing the user's already-verified Opera browser session**: the user manually passes the captcha in Opera once, then Playwright drives the user's actual Opera install via `executable_path=<opera.exe>` + `user_data_dir=<Opera user data>` — inheriting the captcha-cleared cookies. This works because Opera (Chromium-based) itself decrypts the v20 App-Bound Encrypted cookies during launch; we don't need to extract or decrypt them externally.
 
-### Why dropped
+### Engine + why
 
-**Active CAPTCHA gate** on every page. Every navigation redirects to `https://captcha.bom2buy.com/index?...` with an interactive image-puzzle CAPTCHA. There is no path through without a CAPTCHA-solving service (2Captcha / AntiCaptcha / similar paid solver).
+Playwright `chromium.launch_persistent_context(executable_path=<opera.exe>, user_data_dir=<Opera profile>)`. Headless mode does NOT work for Opera (launch hangs at 180 s timeout) — the visible Opera window pops up per launch.
 
-The site appears to use a custom CAPTCHA system (not reCAPTCHA / hCaptcha), so even paid solvers would need manual integration. **Not worth the engineering effort** given alternatives (HQEW, ICKEY) cover the same PRC-marketplace use case at 80 %+ pass-rate.
+| Engine tried | Result | Why |
+|---|---|---|
+| `curl_cffi` chrome131 | ❌ 302 → `captcha.bom2buy.com` | No session cookie; captcha gate fires on every `/search`, `/parametric`, category URL |
+| Firecrawl `/v2/scrape` (basic or stealth proxy) | ❌ 302 → captcha | Free-tier proxies don't solve IconCaptcha; `proxy: "stealth"` consumes 5 cr/call without bypassing |
+| Direct Edge cookie extraction (DPAPI + sqlite) | ❌ Edge uses v20 App-Bound Encryption for cookies; non-Edge processes can't decrypt the master key without admin elevation |
+| Playwright Chromium with cookies imported via storage_state | ❌ Same v20 problem; cookies can't be exported |
+| **Playwright + Opera install + user_data_dir reuse** | ✅ works | Opera decrypts its own v20 cookies during launch; the captcha-cleared session is inherited |
 
-### Path forward (not pursued)
+### URL patterns
 
-Paid CAPTCHA solver + Playwright session with retry-on-CAPTCHA loop. Estimated cost-per-MPN: ~$0.001–0.003.
+```
+Homepage:       https://www.bom2buy.com/
+Search:         https://www.bom2buy.com/search?part=<MPN>&qty=1
+Parametric:     https://www.bom2buy.com/parametric/        # category-driven, not used
+Category:       https://www.bom2buy.com/<slug>/<subslug>/  # e.g. /amplifier-circuits/operational-amplifiers/
+Distributor:    https://www.bom2buy.com/supply/<id>.html   # static supplier promo, not chip detail
+Captcha gate:   https://captcha.bom2buy.com/index?et=…&uri=<original>  # the redirect target
+```
+
+**Critical:** the search parameter name is `part`, NOT `keyword`. A `?keyword=` URL loads the search page but with empty query state (rendered as `搜索型号 ""` with `没有找到` template visible) — we'd silently extract nothing. The right form is `?part=<MPN>&qty=1` (the `qty=1` matches the homepage search-form default and seems required by some downstream rendering).
+
+### Detail-page reach
+
+Search page IS the detail page on bom2buy — all distributor listings render in one go. No second navigation needed. Wait strategy:
+
+```python
+page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+# Poll for either the "加入BOM" button (success) or "没有找到" sentinel (no results) to appear
+```
+
+(Don't use `networkidle` — bom2buy has persistent analytics/long-poll connections that never idle out within timeout.)
+
+### DOM page-element semantics
+
+| Selector | Meaning | Notes |
+|---|---|---|
+| `.exact-part-group-list` | Wrapper for exact-match results | Authoritative container — if it has zero `.distributor-results` children, the search returned no results |
+| `.exact-part-group-list .distributor-results` | One MPN variant. Has `data-part=<MPN>` and `data-distributoruid=<idx>` | Multiple groups for fuzzy variants (e.g. BT168GW,115 returns 2 groups for "115" and "115" without comma) |
+| `.distributor-results .search-group-header` | Variant metadata: 搜索热度, 生命周期, 数据手册, 类别, MPN, description | Lifecycle is `Active` / `Transferred` / `Contact Manufacturer` / `Obsolete` |
+| `.distributor-results table tbody tr` | One distributor row | Each tr has the per-distributor cells listed below |
+| `.td-distri` | Distributor name + 授权 flag + MPN + mfr + 分销商编号 | Name is the text BEFORE 授权 / 型号 markers |
+| `.td-stock` | Stock quantity (comma-formatted) optionally followed by packaging (e.g. `76,624 Tray`) | `-` means unknown/empty (don't fabricate 0) |
+| `.td-delivery-place` | Region + lead time, multi-region pipe-separated | E.g. `中国大陆: 7-10个工作日 | 港台地区: 3-5个工作日` |
+| `.td-price` | Price tiers, each `<qty>+ \n ¥<cny> \n $<usd>` (USD optional) | Both currencies present for international distributors; CNY-only for some |
+| `.td-min-pack` | MOQ + 递增量 + 小计 | `起订量:<int>` / `递增量:<int>` |
+| `.td-buy` | "加入BOM" purchase button | Sentinel for "this row has a real distributor listing" — skip rows without it |
+| `.exact-no-result.hide` | **Hidden empty-result template, always present** | Do NOT use substring match of `没有找到` as a "no results" signal — that hidden template fires false-positive every time |
+| `.title-with-left-border` | Section header "完全匹配型号 (N)" | Where N is the exact-match count; separator between text and `(N)` is `&nbsp;` (U+00A0) |
+
+### Captcha session validation (pre-flight check)
+
+On script startup, the script navigates to `https://www.bom2buy.com/` and checks:
+
+```python
+if "captcha.bom2buy.com" in page.url or page.title().strip() == "Captcha":
+    raise CaptchaRequired(...)  # exit code 3
+```
+
+If raised, the script prints a clear user-action message ("Open Opera, navigate to bom2buy.com, solve the captcha, close Opera, re-run") and exits with **code 3** (distinct from generic failures so the batch driver can skip this source without failing the whole batch).
+
+### Captcha session lifetime (empirical, not formally measured)
+
+The session held across the 2026-05-20 pilot batch (10 MPNs) without re-prompting. Expected lifetime: hours to a few days based on typical captcha-cookie TTLs. If the user pre-passes the captcha just before a batch run, we expect the whole batch to complete on a single session.
+
+### Rate limiting
+
+- **Per-MPN delay:** 3 s between consecutive scrapes (defends against bom2buy's secondary slider-captcha that fires under sustained load).
+- **Every 50 cells:** 30 s longer pause.
+- Both configurable via `--per-mpn-delay` / `--long-delay-every` / `--long-delay-sec`.
+
+### Pitfalls
+
+- **Wrong query parameter** (`?keyword=` instead of `?part=`) silently returns an empty-state page that looks valid but has zero results.
+- **Hidden no-result template** (`.exact-no-result.hide`) causes false-positive `no_results` if you grep markdown/text for `没有找到`. Use DOM-based check on `.exact-part-group-list .distributor-results` existence.
+- **Mfr field bleeds from neighbouring text** if you parse the `.td-distri` cell with naive regex. The cell contains `<distributor>\n授权\n型号:<MPN>\n制造商:<mfr>\n分销商编号:<sku>` — split on `授权` / `型号` markers to isolate the distributor name.
+- **Stock cell can include packaging** (`76,624 Tray`) — strip after the first comma-formatted integer.
+- **Headless mode hangs** — must launch Opera with `headless=False`.
+- **Opera must be fully closed** before scraping (Playwright takes exclusive lock on user-data-dir). The script auto-checks via `tasklist /FI "IMAGENAME eq opera.exe"` and refuses to launch if any are running.
+- **Cookie banner occludes the first 1–2 distributor rows in screenshots** but NOT in DOM extraction. bom2buy uses the Usercentrics CMP — the real visible banner is `<aside id="usercentrics-cmp-ui">`, NOT the loader `<script id="usercentrics-cmp">` (a common misdirection: the `id` lookup hits the script first). Dismiss the visible aside before screenshot: `document.getElementById('usercentrics-cmp-ui').remove()`. Data extraction is unaffected by the banner (DOM is intact behind it) — this fix is purely for cleaner human-eyeball screenshots.
+
+### Data richness (vs other sources)
+
+bom2buy is a multi-distributor BOM aggregator. One typical record returns 10–40 distributor rows per MPN with: stock_qty, multi-currency tier prices, region + lead time, MOQ, distributor SKU, authorized flag. **More structured than any other source we have.** Pilot batch (2026-05-20):
+
+| MPN | distributors | exact_match_count | top-level stock | min price | lifecycle |
+|---|---:|---:|---:|---:|---|
+| STM32G030F6P6 | 21 | 1 | 558 820 | ¥4.55 | Active |
+| ATXMEGA32E5-ANR | 12 | 1 | 22 343 | ¥23.32 | Active |
+| CY8C4025AZI-S413T | 19 | 1 | 284 831 | ¥14.64 | Transferred |
+| BT168GW,115 | 22 | 2 | 69 392 | ¥0.68 | Transferred |
+| LIS2DH12TR | 21 | 1 | 365 606 | ¥8.52 | Active |
+| IRLML5103TRPBF | 40 | 1 | 6 539 666 | ¥0.31 | Transferred |
+| ESP32-WROOM-32E-N4 | 11 | 1 | 135 337 | ¥20.67 | Contact Manufacturer |
+| PIC16F18446T-I/SS | 12 | 1 | 58 009 | ¥9.47 | Active |
+| HT66F017-HF | 0 | 0 | — | — | (Holtek MCU not carried) |
+| LTST-C191KFKT-PH2 | 0 | 0 | — | — | (LiteOn LED not carried) |
+
+### Mapping to canonical schema
+
+- `manufacturer_part_number` ← variant's `data-part` attribute
+- `manufacturer` ← first distributor row's mfr value (consistent across rows for the same variant)
+- `stock_now_qty` ← sum of **distinct** distributors' `stock_qty` (after dedup — see below)
+- `stock_breakdown[]` ← one entry per **distinct** distributor:
+  `{label:'授权'|'', warehouse:<distri>, quantity:<stock>, ship_text:<region+lead>, moq:<int>, vendor_sku:<sku>, prices:[<own tier list>]}`
+- `prices[]` ← cell-level top-level prices = tier list from the **cheapest authorized** distributor (CNY only). This is one summary view; the canonical per-distributor tiers live in `stock_breakdown[i].prices`.
+- `datasheet_url` ← header anchor, or `null` if `javascript:void(0)`
+- `lifecycle_status` ← header "生命周期"
+- `min_order_qty` ← minimum MOQ across distinct distributors
+- `site_distributors[]` ← full RAW per-row detail (NO dedup) — packaging variants preserved here for any downstream tool that needs the split
+- `site_category` ← header "类别"
+
+### Distributor dedup rule (CRITICAL — added 2026-05-20)
+
+bom2buy emits multiple `tbody tr` rows for the same distributor when that distributor carries multiple **packaging variants** of the same chip (e.g. RS Components selling STM32G030F6P6 as SKUs `2396332` + `2396333` + `2396333P` — three packaging options, NOT three warehouses). For the canonical `stock_breakdown[]` we keep ONLY the first row per distributor name. Without this dedup:
+- `stock_now_qty` would double-count packaging variants → inflated totals (e.g. STM32G030F6P6 went from a misleading 21-row 558 820 total to a clean 16-row 558 153 total after dedup)
+- consumers reading `stock_breakdown[].warehouse` would see false "multiple warehouses per distributor"
+
+The dropped rows are preserved verbatim in `site_distributors[]` for any tool that needs the packaging-level detail.
+
+### Per-row prices for downstream warehouse-exploded export
+
+Each `stock_breakdown[]` entry carries its OWN `prices` array (independent of the top-level `prices[]`). bom2buy's per-distributor tier structures differ — Digi-Key may have 9 tiers, Wuhan P&S 4 tiers, Mouser 1 single-price row at `min_qty=2000`, Avnet Americas a min_qty=160 000 factory-order. When this canonical record is fed into a warehouse-exploded `batch_index.csv` downstream (LCSC/Future/HQEW style), each per-warehouse row should derive its `min_break_qty / max_break_qty / num_price_tiers / price_at_min_qty / price_at_max_qty` from `stock_breakdown[i].prices` — NOT from the cell-level top-level `prices[]` (which would falsely repeat the cheapest authorized distributor's tiers across all rows).
 
 ---
 
