@@ -7,7 +7,8 @@ sheet 1.
 
 - Script: `common/merge_batch_for_procurement.py`
 - Output root: `<env_root>/merged/Merge_<api_ts>__<scr_ts>/`, where `<env_root>` is `test/` (default) or `production/` via `--env prod`.
-- Output files: `merged_procurement.xlsx` (3 sheets), `merged_procurement.csv` (= Sheet 2 contents)
+- Output files: `Versuni_chip_stock_availability_check_<YYYYMMDD>.xlsx` (3 sheets) + `Versuni_chip_stock_availability_check_<YYYYMMDD>.csv` (= Sheet 2 contents). `<YYYYMMDD>` is the **run date** (when the merge is executed), formatted as `date.today().strftime("%Y%m%d")`. The folder name `Merge_<api_ts>__<scr_ts>/` stays unchanged.
+- Fonts: every `openpyxl.styles.Font(...)` call uses `name="Calibri"`. Body cells inherit the workbook default (also Calibri).
 
 ## Inputs
 

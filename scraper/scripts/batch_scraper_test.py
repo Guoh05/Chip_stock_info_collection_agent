@@ -695,7 +695,7 @@ def write_xlsx(rows: list[dict], columns: list[str], path: Path, sheet_name: str
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = sheet_name[:31] or "Sheet1"
-    header_font = Font(bold=True)
+    header_font = Font(bold=True, name="Calibri")
     header_fill = PatternFill(start_color="FFE2E2E2", end_color="FFE2E2E2", fill_type="solid")
     for col_idx, col in enumerate(columns, 1):
         c = ws.cell(row=1, column=col_idx, value=col)

@@ -17,8 +17,10 @@ Rules:
 8. Sheet 1 ("高风险有货") = procurement priority view: risk == "high" AND
    Available Quantity > 0.
 
-Output: <env_root>/merged/Merge_<api_ts>__<scr_ts>/merged_procurement.xlsx
-        + merged_procurement.csv (= Sheet 2 contents)
+Output: <env_root>/merged/Merge_<api_ts>__<scr_ts>/
+        Versuni_chip_stock_availability_check_<YYYYMMDD>.xlsx
+        + Versuni_chip_stock_availability_check_<YYYYMMDD>.csv (= Sheet 2)
+        (<YYYYMMDD> is the date the merge was executed.)
 
 `<env_root>` is `test/` (default) or `production/` (with --env prod). The
 same flag also picks where to read the API + Scraper batches from
@@ -31,6 +33,7 @@ import csv
 import re
 import sys
 from collections import defaultdict
+from datetime import date
 from pathlib import Path
 
 import openpyxl
@@ -149,8 +152,8 @@ GREY = PatternFill(start_color="FFEEEEEE", end_color="FFEEEEEE", fill_type="soli
 HEADER_FILL_BLUE = PatternFill(start_color="FF1F4E78", end_color="FF1F4E78", fill_type="solid")
 HEADER_FILL_ORANGE = PatternFill(start_color="FFFCE4D6", end_color="FFFCE4D6", fill_type="solid")
 HEADER_FILL_GREY = PatternFill(start_color="FF595959", end_color="FF595959", fill_type="solid")
-HEADER_FONT_WHITE = Font(bold=True, color="FFFFFFFF")
-HEADER_FONT_BLACK = Font(bold=True, color="FF000000")
+HEADER_FONT_WHITE = Font(bold=True, color="FFFFFFFF", name="Calibri")
+HEADER_FONT_BLACK = Font(bold=True, color="FF000000", name="Calibri")
 
 
 def _header_style(col_idx: int) -> tuple[PatternFill, Font]:
@@ -517,7 +520,9 @@ def main() -> int:
     sheet1_rows.sort(key=_sort_key)
 
     # Write xlsx.
-    xlsx_path = out_dir / "merged_procurement.xlsx"
+    today = date.today().strftime("%Y%m%d")
+    out_stem = f"Versuni_chip_stock_availability_check_{today}"
+    xlsx_path = out_dir / f"{out_stem}.xlsx"
     wb = openpyxl.Workbook()
     ws1 = wb.active
     ws1.title = "高风险有货"
@@ -534,7 +539,7 @@ def main() -> int:
     wb.save(xlsx_path)
 
     # Companion CSV (= sheet 2).
-    csv_path = out_dir / "merged_procurement.csv"
+    csv_path = out_dir / f"{out_stem}.csv"
     write_csv(sheet2_rows, OUTPUT_COLUMNS, csv_path)
 
     # Run summary.
