@@ -17,8 +17,12 @@ Rules:
 8. Sheet 1 ("高风险有货") = procurement priority view: risk == "high" AND
    Available Quantity > 0.
 
-Output: test/merged/Merge_<api_ts>__<scr_ts>/merged_procurement.xlsx
+Output: <env_root>/merged/Merge_<api_ts>__<scr_ts>/merged_procurement.xlsx
         + merged_procurement.csv (= Sheet 2 contents)
+
+`<env_root>` is `test/` (default) or `production/` (with --env prod). The
+same flag also picks where to read the API + Scraper batches from
+(`<env_root>/api/` and `<env_root>/scraper/`).
 """
 from __future__ import annotations
 
@@ -34,9 +38,10 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-API_TEST_DIR = PROJECT_ROOT / "test" / "api_test"
-SCR_TEST_DIR = PROJECT_ROOT / "test" / "scraper_test"
-MERGED_DIR = PROJECT_ROOT / "test" / "merged"
+ENV_ROOTS = {
+    "test": PROJECT_ROOT / "test",
+    "prod": PROJECT_ROOT / "production",
+}
 CHIP_LIST_PATH = PROJECT_ROOT / "ref" / "Shortage Emergency Response List_v2.xlsx"
 CHIP_LIST_SHEET = "Part List Modify"
 
@@ -420,18 +425,26 @@ def write_csv(rows: list[dict], columns: list[str], path: Path) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--env", choices=("test", "prod"), default="test",
+                    help="Environment root: 'test' → test/{api,scraper,merged}/ (default), "
+                         "'prod' → production/{api,scraper,merged}/.")
     ap.add_argument("--api", type=Path, default=None,
-                    help="API BatchTest folder (default: newest under test/api_test/)")
+                    help="API BatchTest folder (default: newest under <env_root>/api/)")
     ap.add_argument("--scr", type=Path, default=None,
-                    help="Scraper BatchTest folder (default: newest under test/scraper_test/)")
+                    help="Scraper BatchTest folder (default: newest under <env_root>/scraper/)")
     ap.add_argument("--out", type=Path, default=None,
-                    help="Output dir (default: test/merged/Merge_<api_ts>__<scr_ts>/)")
+                    help="Output dir (default: <env_root>/merged/Merge_<api_ts>__<scr_ts>/)")
     ap.add_argument("--chip-list", type=Path, default=CHIP_LIST_PATH,
                     help=f"Chip metadata xlsx (default: {CHIP_LIST_PATH})")
     args = ap.parse_args()
 
-    api_dir = args.api or latest_batch(API_TEST_DIR)
-    scr_dir = args.scr or latest_batch(SCR_TEST_DIR)
+    env_root = ENV_ROOTS[args.env]
+    api_root = env_root / "api"
+    scr_root = env_root / "scraper"
+    merged_root = env_root / "merged"
+
+    api_dir = args.api or latest_batch(api_root)
+    scr_dir = args.scr or latest_batch(scr_root)
     api_csv = api_dir / "batch_index.csv"
     scr_csv = scr_dir / "batch_index.csv"
     if not api_csv.exists():
@@ -443,7 +456,7 @@ def main() -> int:
 
     api_ts = re.sub(r"^BatchTest_", "", api_dir.name)
     scr_ts = re.sub(r"^BatchTest_", "", scr_dir.name)
-    out_dir = args.out or (MERGED_DIR / f"Merge_{api_ts}__{scr_ts}")
+    out_dir = args.out or (merged_root / f"Merge_{api_ts}__{scr_ts}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     api_rows_raw = read_ok_rows(api_csv)

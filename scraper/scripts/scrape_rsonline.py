@@ -1,4 +1,4 @@
-"""RS Components (RS 欧时, rsonline.cn) product scraper.
+﻿"""RS Components (RS 欧时, rsonline.cn) product scraper.
 
 Strategy:
   1. curl_cffi (chrome131) GET `/web/c/?searchTerm=<MPN>` — Next.js SSR page.
@@ -12,7 +12,7 @@ Strategy:
      (the spec parameter table), and tier prices.
   3. Map to canonical schema.
 
-Folder layout: test/scraper_test/Test_<MPN>_RSONLINE_<YYYYMMDD>_<HH>_<MM>_<SS>/
+Folder layout: test/scraper/Test_<MPN>_RSONLINE_<YYYYMMDD>_<HH>_<MM>_<SS>/
   <MPN>.json
   <MPN>_summary.md
   <MPN>_search.html
@@ -39,7 +39,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 CHANNEL = "RSONLINE"
 BASE = "https://www.rsonline.cn"
 

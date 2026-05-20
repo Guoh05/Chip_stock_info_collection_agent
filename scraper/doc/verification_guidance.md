@@ -1,4 +1,4 @@
-# Scraper output verification guidance
+﻿# Scraper output verification guidance
 
 This doc is for a Claude Code session whose job is to **manually verify** that the JSON records produced by the scrapers match what the corresponding product screenshots actually show. The goal is to catch:
 
@@ -13,7 +13,7 @@ It is **not** for fixing the scrapers — only for producing a verification repo
 A batch folder, e.g.
 
 ```
-test/scraper_test/BatchTest_20260518_19_58_04/
+test/scraper/BatchTest_20260518_19_58_04/
 ```
 
 Inside it there is one subfolder per `(MPN × channel)` cell, e.g. `Test_BT168GW_115_LCSC/`. The user will tell you which batch to verify.
@@ -180,7 +180,7 @@ This matches the project-wide principle: **when the source data is ambiguous, le
 Write **one markdown file** and **one xlsx** in the batch folder root:
 
 ```
-test/scraper_test/BatchTest_<ts>/
+test/scraper/BatchTest_<ts>/
 ├── VERIFICATION_REPORT.md
 └── VERIFICATION_REPORT.xlsx
 ```
@@ -326,7 +326,7 @@ Without mitigations the same job is ≈ 5–10× more expensive and may run out 
 
 ## Quick worked example — one cell
 
-Folder: `test/scraper_test/BatchTest_20260518_19_58_04/Test_BT168GW_115_LCSC/`
+Folder: `test/scraper/BatchTest_20260518_19_58_04/Test_BT168GW_115_LCSC/`
 
 - Pattern: B (nested subfolder `BT168GW_115/`).
 - JSON: `BT168GW_115/BT168GW_115.json` → has `extracted.manufacturer_part_number="BT168GW,115"`, `extracted.stock_now_qty=10505`, `extracted.prices=[…4 tiers…]`.

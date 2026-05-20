@@ -1,6 +1,6 @@
-# API batch output schema
+﻿# API batch output schema
 
-This is the data contract for `batch_api_test.py` outputs. Any downstream tool (or future Claude session) parsing files under `test/api_test/BatchTest_<YYYYMMDD>_<HH_MM_SS>/` should rely on the column names and value rules below, not on column order.
+This is the data contract for `batch_api_test.py` outputs. Any downstream tool (or future Claude session) parsing files under `test/api/BatchTest_<YYYYMMDD>_<HH_MM_SS>/` should rely on the column names and value rules below, not on column order.
 
 Driver: `api/scripts/batch_api_test.py`. Sources: `MOUSER`, `DIGIKEY`, `ELEMENT14`, `ARROW` (extendable via `SOURCES_ALL` in the driver).
 
@@ -190,7 +190,7 @@ The canonical `stock_now_*` / `stock_future_*` scalars are the cross-source inte
 import csv
 from pathlib import Path
 
-batch = Path("test/api_test/BatchTest_20260518_18_00_00")
+batch = Path("test/api/BatchTest_20260518_18_00_00")
 
 # Quick analysis: long form
 with open(batch / "batch_index.csv", encoding="utf-8-sig") as f:

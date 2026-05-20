@@ -16,7 +16,8 @@ Per-chip wall clock is dominated by the slowest source (typically Digikey
 source's own print output may interleave; the per-source summary lines
 emitted by this driver are serialized via a print lock.
 
-Outputs land under `test/api_test/BatchTest_<YYYYMMDD>_<HH_MM_SS>/`:
+Outputs land under `<env_root>/api/BatchTest_<YYYYMMDD>_<HH_MM_SS>/`,
+where `<env_root>` is `test/` (default) or `production/` (with --env prod):
   - batch_summary.md                 — TL;DR + per-source pass rate + highlights
   - batch_index.csv / .xlsx          — long form (one row per MPN × source × warehouse)
   - batch_index.json                 — same data, machine-readable
@@ -26,10 +27,11 @@ Outputs land under `test/api_test/BatchTest_<YYYYMMDD>_<HH_MM_SS>/`:
                                        single-MPN call would produce.
 
 Usage:
-    .venv/Scripts/python.exe api/scripts/batch_api_test.py            # full sweep
-    .venv/Scripts/python.exe api/scripts/batch_api_test.py --limit 3  # dry-run
+    .venv/Scripts/python.exe api/scripts/batch_api_test.py             # full sweep (test env)
+    .venv/Scripts/python.exe api/scripts/batch_api_test.py --limit 3   # dry-run
     .venv/Scripts/python.exe api/scripts/batch_api_test.py --only MOUSER
     .venv/Scripts/python.exe api/scripts/batch_api_test.py --xlsx PATH
+    .venv/Scripts/python.exe api/scripts/batch_api_test.py --env prod  # write to production/api/
 
 The script is idempotent — each invocation creates a fresh timestamped batch
 folder. Re-running does NOT overwrite previous batches.
@@ -58,7 +60,10 @@ from dotenv import load_dotenv
 
 # Project paths --------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-API_TEST_ROOT = PROJECT_ROOT / "test" / "api_test"
+ENV_ROOTS = {
+    "test": PROJECT_ROOT / "test",
+    "prod": PROJECT_ROOT / "production",
+}
 DEFAULT_XLSX = PROJECT_ROOT / "ref" / "Shortage Emergency Response List_v2.xlsx"
 DEFAULT_XLSX_SHEET = "Part List Modify"
 DEFAULT_XLSX_MPN_HEADER = "Manufacture Part Number"
@@ -1115,6 +1120,8 @@ def main(argv: list[str]) -> int:
                         help="Max concurrent sources per chip (default = number "
                              "of sources being run). Pass 1 to force serial mode "
                              "for debugging.")
+    parser.add_argument("--env", choices=("test", "prod"), default="test",
+                        help="Output root: 'test' → test/api/ (default), 'prod' → production/api/.")
     args = parser.parse_args(argv[1:])
 
     load_dotenv(ENV_PATH)
@@ -1152,9 +1159,10 @@ def main(argv: list[str]) -> int:
 
     now = datetime.now()
     batch_name = f"BatchTest_{now.strftime('%Y%m%d')}_{now.strftime('%H_%M_%S')}"
-    batch_dir = API_TEST_ROOT / batch_name
+    api_root = ENV_ROOTS[args.env] / "api"
+    batch_dir = api_root / batch_name
     batch_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Batch folder: {batch_dir}")
+    print(f"Env: {args.env}  →  Batch folder: {batch_dir}")
 
     write_batch_input_csv(chips, batch_dir / "batch_input.csv")
 

@@ -1,11 +1,11 @@
-"""Arrow Electronics Pricing & Availability API client.
+﻿"""Arrow Electronics Pricing & Availability API client.
 
 GETs api.arrow.com/itemservice/v4/en/search/list with the request payload as a
 JSON-encoded `req` querystring parameter. Authentication requires BOTH
 `login` and `apikey` querystring params (in addition to login/apikey being
 nested inside the `req` JSON — Arrow's docs show it both ways).
 
-Folder convention: test/api_test/Test_<MPN>_ARROW_<YYYYMMDD>_<HH>_<MM>_<SS>/
+Folder convention: test/api/Test_<MPN>_ARROW_<YYYYMMDD>_<HH>_<MM>_<SS>/
 with per-variant subfolders (one per distinct returned MPN).
 
 Docs of record:
@@ -35,7 +35,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary  # type: ignore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "api_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "api"
 CHANNEL = "ARROW"
 API_BASE = "https://api.arrow.com/itemservice/v4/en"
 METHOD_TAG = "api_arrow_v4"

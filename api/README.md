@@ -1,4 +1,4 @@
-# API Track — Distributor APIs
+﻿# API Track — Distributor APIs
 
 Track 2 of the chip-availability pipeline. Calls vendor APIs directly (Mouser
 Search, Digikey Product Information, …) and normalizes results into the same
@@ -17,7 +17,7 @@ no browser, no anti-bot fight.
 | **Arrow Electronics** Pricing & Availability v4 | `GET api.arrow.com/itemservice/v4/en/search/list` | querystring `login` + `apikey` (BOTH required); same pair also nested in the `req` JSON payload. Inventory is republished across `webSites[].sources[]` so the same physical stock may appear under Verical and Arrow ACNA/EUROPE — dedup by `(fohQty, shipsFrom, shipsIn)` before summing. | ✅ |
 | Element14 / Farnell (e络盟) | `GET api.element14.com/catalog/products` | API key in querystring; default store `cn.element14.com`; uses `term=manuPartNum:<MPN>` (NOT `manuPartNumber`); `versionNumber` is NOT a valid param. Lead time `stock.leastLeadTime` is in **days** (not weeks). Quota: 2 req/s, 1,000/day. | ✅ |
 
-**Latest batch run:** `test/api_test/BatchTest_20260520_07_40_36/` — 107 MPNs × 5 source(s) = 535 (chip × source) pairs.
+**Latest batch run:** `test/api/BatchTest_20260520_07_40_36/` — 107 MPNs × 5 source(s) = 535 (chip × source) pairs.
 
 | Source | OK | No results | Failed | OK % |
 |---|---|---|---|---|
@@ -46,7 +46,7 @@ The scraper track and API track are independent technical lines. They:
 Both tracks share:
 
 - The output convention — same `Test_<MPN>_<CHANNEL>_<YYYYMMDD>_<HH>_<MM>_<SS>/`
-  folder layout, but API runs go under `test/api_test/`.
+  folder layout, but API runs go under `test/api/`.
 - The canonical schema (`stock_now_qty` / `stock_future_qty` /
   `stock_breakdown` / `site_*`).
 - The summary renderer (`common/_summary.py`).
@@ -117,7 +117,7 @@ registered on mouser.com would be needed.
 .venv/Scripts/python.exe api/scripts/api_digikey.py "BT168GW,115"
 ```
 Quote MPNs containing commas or spaces. Output: one timestamped folder under
-`test/api_test/` with `<MPN>.json`, `parent_summary.md`, `raw_response.json`,
+`test/api/` with `<MPN>.json`, `parent_summary.md`, `raw_response.json`,
 and one per-variant subfolder for each distinct returned MPN string.
 
 ### Full batch (all 103 MPNs from the xlsx × both APIs)
@@ -128,8 +128,9 @@ and one per-variant subfolder for each distinct returned MPN string.
 .venv/Scripts/python.exe api/scripts/batch_api_test.py --only DIGIKEY   # one channel
 .venv/Scripts/python.exe api/scripts/batch_api_test.py --throttle 0.5   # slower
 .venv/Scripts/python.exe api/scripts/batch_api_test.py --xlsx OTHER.xlsx
+.venv/Scripts/python.exe api/scripts/batch_api_test.py --env prod        # write to production/api/
 ```
-Output: `test/api_test/BatchTest_<ts>/` containing `batch_summary.md`,
+Output: `<env_root>/api/BatchTest_<ts>/` (env defaults to `test/`; `--env prod` → `production/`) containing `batch_summary.md`,
 `batch_index.csv/.xlsx`, `batch_compare.csv/.xlsx`, `batch_index.json`,
 `batch_input.csv`, `failures.md`, plus one `Test_<sanitized_mpn>_<CHANNEL>/`
 folder per call (identical shape to a single-MPN run).

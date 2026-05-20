@@ -20,8 +20,9 @@ api/.env
 scraper/.env
 common/.env
 
-# --- Run output (per CLAUDE.md: test/ is generated dev output) ---
+# --- Run output (per CLAUDE.md: test/ + production/ are generated output) ---
 test/
+production/
 temp/
 
 # --- Editor / OS ---

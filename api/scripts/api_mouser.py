@@ -1,4 +1,4 @@
-"""Mouser Search API client.
+﻿"""Mouser Search API client.
 
 POSTs to api.mouser.com/api/v1/search/partnumber (and falls back to
 /search/keyword for ambiguous or comma-bearing MPNs that don't resolve on
@@ -6,7 +6,7 @@ partnumber search). Normalizes results into the canonical 现货/期货 schema u
 across this project — see scraper/doc/scraper_report_v2.md and
 common/_summary.py for the shared shape.
 
-Folder convention: test/api_test/Test_<MPN>_MOUSER_<YYYYMMDD>_<HH>_<MM>_<SS>/
+Folder convention: test/api/Test_<MPN>_MOUSER_<YYYYMMDD>_<HH>_<MM>_<SS>/
 with per-variant subfolders (parent_summary.md at the top, one folder per
 distinct ManufacturerPartNumber returned).
 
@@ -32,7 +32,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary  # type: ignore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "api_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "api"
 CHANNEL = "MOUSER"
 API_BASE = "https://api.mouser.com/api/v1"
 METHOD_TAG = "api_mouser_v1"

@@ -1,4 +1,4 @@
-"""Compare stockpool_qty between latest API and Scraper batch runs for LCSC + Digikey.
+﻿"""Compare stockpool_qty between latest API and Scraper batch runs for LCSC + Digikey.
 
 Rule: same input_mpn, status=ok in BOTH sides; for each (mpn, channel) pair,
 the scraper emits one row, the API may emit several (one per warehouse). It's
@@ -11,8 +11,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-API_DIR = Path("test/api_test/BatchTest_20260519_17_54_29")
-SCR_DIR = Path("test/scraper_test/BatchTest_20260519_14_15_45")
+API_DIR = Path("test/api/BatchTest_20260519_17_54_29")
+SCR_DIR = Path("test/scraper/BatchTest_20260519_14_15_45")
 OUT = Path("test/comparison/api_vs_scraper_qty_20260519.md")
 
 CHANNEL_MAP = {

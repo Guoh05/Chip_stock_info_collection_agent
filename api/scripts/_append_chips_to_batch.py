@@ -1,4 +1,4 @@
-"""One-off incremental updater for a finished batch folder.
+﻿"""One-off incremental updater for a finished batch folder.
 
 Re-uses `batch_api_test._call_one_source` to run additional (chip × source)
 pairs and appends the results to an existing batch directory's
@@ -30,7 +30,7 @@ import batch_api_test as B  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
 # --- edit these two values per run -----------------------------------------
-BATCH_DIR = PROJECT_ROOT / "test" / "api_test" / "BatchTest_20260520_07_40_36"
+BATCH_DIR = PROJECT_ROOT / "test" / "api" / "BatchTest_20260520_07_40_36"
 NEW_CHIPS = [
     # row=None → not from the master xlsx; the column is informational only
     {"row": "+1", "input_mpn": "BAT32G135BGE32FP", "expected_mfr": "CmSemi"},

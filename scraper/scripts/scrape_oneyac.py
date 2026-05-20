@@ -1,4 +1,4 @@
-"""ONEYAC (唯样商城, oneyac.com) product scraper.
+﻿"""ONEYAC (唯样商城, oneyac.com) product scraper.
 
 Strategy:
   1. Playwright Firefox to clear Cloudflare interstitial on search page
@@ -6,7 +6,7 @@ Strategy:
   2. Find first product anchor `/product/<numeric_id>.html` and navigate to it.
   3. Parse the rendered detail page for canonical fields.
 
-Folder layout: test/scraper_test/Test_<MPN>_ONEYAC_<YYYYMMDD>_<HH>_<MM>_<SS>/
+Folder layout: test/scraper/Test_<MPN>_ONEYAC_<YYYYMMDD>_<HH>_<MM>_<SS>/
   <MPN>.json, <MPN>_summary.md
   <MPN>_search.html, <MPN>_search.png
   <MPN>_product.html, <MPN>_product.png
@@ -29,7 +29,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 CHANNEL = "ONEYAC"
 BASE = "https://www.oneyac.com"
 

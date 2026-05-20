@@ -1,4 +1,4 @@
-"""Regenerate the auto-managed status sections of the scraper docs.
+﻿"""Regenerate the auto-managed status sections of the scraper docs.
 
 Two destinations:
 
@@ -10,7 +10,7 @@ Two destinations:
        <!-- BEGIN AUTO:source_status ... -->
        <!-- END AUTO:source_status -->
 
-Both blocks are rendered from the most recent `test/scraper_test/BatchTest_<ts>/`
+Both blocks are rendered from the most recent `test/scraper/BatchTest_<ts>/`
 folder, with the hand-maintained `CHANNEL_STATUS` table at the top of this file
 as the source of truth for which sources exist and what method each uses.
 
@@ -37,7 +37,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 README = PROJECT_ROOT / "scraper" / "README.md"
 SOURCE_TECH_REF = PROJECT_ROOT / "scraper" / "doc" / "source_technical_reference.md"
-SCRAPER_TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+SCRAPER_TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 
 # Marker pairs per target file
 TARGETS = {
@@ -280,7 +280,7 @@ def render_readme_block(today: str, batch_dir: Path | None, stats: dict) -> str:
         out.append(f"| {ch} | {method} | {STATUS_ICON.get(st, '?')} |")
     out.append("")
     if not batch_dir or not stats or not stats.get("per_channel"):
-        out.append("_No batch runs yet in `test/scraper_test/`._")
+        out.append("_No batch runs yet in `test/scraper/`._")
         out.append("")
     else:
         rel = batch_dir.relative_to(PROJECT_ROOT).as_posix()
@@ -376,7 +376,7 @@ def render_source_ref_block(today: str, batch_dir: Path | None, stats: dict) -> 
             )
         out.append("")
     else:
-        out.append("_No batch runs yet in `test/scraper_test/`._")
+        out.append("_No batch runs yet in `test/scraper/`._")
         out.append("")
         out.append("### Working sources (hand-maintained — no batch data yet)")
         out.append("")

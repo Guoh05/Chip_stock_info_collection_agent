@@ -1,4 +1,4 @@
-# Merge for procurement — rules & output contract
+﻿# Merge for procurement — rules & output contract
 
 Procurement-facing merge of the two `batch_index.csv` snapshots (API track +
 Scraper track) into a single Excel workbook with project-level shortage
@@ -6,13 +6,13 @@ metadata appended and a priority view of high-risk in-stock parts on
 sheet 1.
 
 - Script: `common/merge_batch_for_procurement.py`
-- Output root: `test/merged/Merge_<api_ts>__<scr_ts>/`
+- Output root: `<env_root>/merged/Merge_<api_ts>__<scr_ts>/`, where `<env_root>` is `test/` (default) or `production/` via `--env prod`.
 - Output files: `merged_procurement.xlsx` (3 sheets), `merged_procurement.csv` (= Sheet 2 contents)
 
 ## Inputs
 
-- API CSV: `test/api_test/BatchTest_<ts>/batch_index.csv`
-- Scraper CSV: `test/scraper_test/BatchTest_<ts>/batch_index.csv`
+- API CSV: `<env_root>/api/BatchTest_<ts>/batch_index.csv`
+- Scraper CSV: `<env_root>/scraper/BatchTest_<ts>/batch_index.csv`
 - Chip metadata: `ref/Shortage Emergency Response List_v2.xlsx` (sheet `Part List Modify`)
 
 Schemas: `api/doc/batch_output_schema.md`, `scraper/doc/batch_output_schema.md`. Both CSVs share 24 columns; scraper adds `elapsed_sec`, `num_variants` (dropped on merge).
@@ -137,13 +137,14 @@ No FX normalisation in v1.
 
 ```bash
 python common/merge_batch_for_procurement.py \
+    [--env {test,prod}] \
     [--api  <api_BatchTest_dir>] \
     [--scr  <scraper_BatchTest_dir>] \
     [--out  <output_dir>] \
     [--chip-list <xlsx_path>]
 ```
 
-Run with no args = newest batches in each track + default chip list.
+Run with no args = newest batches in each track under `test/` + default chip list. `--env prod` switches both the input batch roots (`production/api/`, `production/scraper/`) and the output root (`production/merged/`). Use explicit `--api` / `--scr` / `--out` to mix environments (rarely needed).
 
 ## Out of scope (v1)
 

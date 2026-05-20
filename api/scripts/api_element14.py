@@ -1,4 +1,4 @@
-"""Element14 / Farnell (e络盟) catalog API client.
+﻿"""Element14 / Farnell (e络盟) catalog API client.
 
 GETs api.element14.com/catalog/products with `term=manuPartNum:<MPN>` and
 normalizes results into the canonical 现货/期货 schema. The e络盟 store
@@ -8,7 +8,7 @@ China account; pass --store to switch.
 Docs of record: partner.element14.com/search_api/Description (overview),
 /Request_URL, /Query_Parameters, /storeInfoid_Values.
 
-Folder convention: test/api_test/Test_<MPN>_ELEMENT14_<YYYYMMDD>_<HH>_<MM>_<SS>/
+Folder convention: test/api/Test_<MPN>_ELEMENT14_<YYYYMMDD>_<HH>_<MM>_<SS>/
 with per-variant subfolders (one per distinct returned MPN).
 
 Usage:
@@ -35,7 +35,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary  # type: ignore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "api_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "api"
 CHANNEL = "ELEMENT14"
 API_BASE = "https://api.element14.com/catalog/products"
 METHOD_TAG = "api_element14_v1"

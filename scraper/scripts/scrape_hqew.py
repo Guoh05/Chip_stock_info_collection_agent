@@ -1,4 +1,4 @@
-"""HQEW (华强电子网, hqew.com) scraper.
+﻿"""HQEW (华强电子网, hqew.com) scraper.
 
 hqew.com is a B2B *marketplace* — many independent suppliers list the same MPN
 with their own (private) stock and pricing. Unlike LCSC/Digikey (one distributor
@@ -41,7 +41,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 CHANNEL = "HQEW"
 SEARCH_BASE = "https://s.hqew.com"
 TOP_N_LISTINGS = 5  # cap on supplier rows kept in `stock_breakdown` + JSON (top-5 by stock)

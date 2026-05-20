@@ -1,4 +1,4 @@
-"""LCSC scraper v3 — szlcsc.com (China site) multi-product.
+﻿"""LCSC scraper v3 — szlcsc.com (China site) multi-product.
 
 Strategy:
   1. Search via so.szlcsc.com (`https://so.szlcsc.com/global.html?k=<MPN>`).
@@ -22,7 +22,7 @@ Strategy:
        - 在途 ships "约3个工作日" (about 3 business days)
 
 Folder layout (per the user's "one parent run, per-variant subfolder" request):
-  test/scraper_test/Test_<MPN>_LCSC_<YYYYMMDD>_<HH>_<MM>_<SS>/
+  test/scraper/Test_<MPN>_LCSC_<YYYYMMDD>_<HH>_<MM>_<SS>/
     ├── parent_summary.md                  # combined view of all variants
     ├── <MPN>.json                         # combined record
     └── <variantMPN>/                      # one subfolder per matched product
@@ -53,7 +53,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 CHANNEL = "LCSC"
 
 UA = (

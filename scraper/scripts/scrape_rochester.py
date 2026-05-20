@@ -1,4 +1,4 @@
-"""Rochester Electronics (rocelec.com) product scraper.
+﻿"""Rochester Electronics (rocelec.com) product scraper.
 
 Salesforce Lightning B2B Commerce site (LWC). Requires Playwright Firefox to
 clear Akamai HTTP/2 fingerprint check + homepage warmup so the LWC bundle
@@ -19,7 +19,7 @@ Catalog caveat: Rochester only stocks EOL / authorized-secondary supply parts.
 Most active-production MPNs in our 103-chip master list return "no results" —
 that is the source's real catalog scope, not a scraper failure.
 
-Folder layout: test/scraper_test/Test_<MPN>_ROCHESTER_<YYYYMMDD>_<HH>_<MM>_<SS>/
+Folder layout: test/scraper/Test_<MPN>_ROCHESTER_<YYYYMMDD>_<HH>_<MM>_<SS>/
   <MPN>.json, <MPN>_summary.md
   <MPN>_search.html, <MPN>_search.png
   <MPN>_product.html, <MPN>_product.png
@@ -42,7 +42,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 CHANNEL = "ROCHESTER"
 BASE = "https://www.rocelec.com"
 

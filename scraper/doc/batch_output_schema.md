@@ -1,8 +1,8 @@
-# Scraper batch output schema
+﻿# Scraper batch output schema
 
 > **v2 schema as of 2026-05-19** — warehouse-exploded. Mirrors `api/doc/batch_output_schema.md` for the first 24 columns so the two tracks' `batch_index.csv` files share a column reference and can be `UNION ALL`'d. See [Version history](#version-history) for the v1 → v2 change.
 
-This is the data contract for `batch_scraper_test.py` outputs. Any downstream tool (or future Claude session) parsing files under `test/scraper_test/BatchTest_<YYYYMMDD>_<HH_MM_SS>/` should rely on the column names and value rules below, not on column order.
+This is the data contract for `batch_scraper_test.py` outputs. Any downstream tool (or future Claude session) parsing files under `test/scraper/BatchTest_<YYYYMMDD>_<HH_MM_SS>/` should rely on the column names and value rules below, not on column order.
 
 Driver: `scraper/scripts/batch_scraper_test.py`. Sources: `LCSC`, `DIGIKEY`, `HQEW`, `FUTURE`, `RSONLINE`, `ONEYAC`, `ICKEY`, `ROCHESTER` (extendable via `CHANNELS` / `CHANNEL_ORDER` in the driver).
 
@@ -197,7 +197,7 @@ The canonical `stock_now_*` / `stock_future_*` scalars and the `stock_breakdown[
 import csv
 from pathlib import Path
 
-batch = Path("test/scraper_test/BatchTest_20260519_XX_XX_XX")
+batch = Path("test/scraper/BatchTest_20260519_XX_XX_XX")
 
 # Quick analysis: long form (one row per warehouse)
 with open(batch / "batch_index.csv", encoding="utf-8-sig") as f:
@@ -247,8 +247,8 @@ Columns 1–24 align with `api/doc/batch_output_schema.md`. To union the two tra
 
 ```python
 import pandas as pd
-scraper = pd.read_csv("test/scraper_test/BatchTest_<ts>/batch_index.csv", encoding="utf-8-sig")
-api     = pd.read_csv("test/api_test/BatchTest_<ts>/batch_index.csv",     encoding="utf-8-sig")
+scraper = pd.read_csv("test/scraper/BatchTest_<ts>/batch_index.csv", encoding="utf-8-sig")
+api     = pd.read_csv("test/api/BatchTest_<ts>/batch_index.csv",     encoding="utf-8-sig")
 # Drop scraper-only extras for a strict 24-col union; or pd.concat with sort=False to keep them
 common  = pd.concat([scraper.drop(columns=["elapsed_sec", "num_variants"]), api],
                     ignore_index=True)

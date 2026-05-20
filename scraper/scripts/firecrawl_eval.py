@@ -1,4 +1,4 @@
-"""One-shot evaluation of the Firecrawl /v2/scrape REST API.
+﻿"""One-shot evaluation of the Firecrawl /v2/scrape REST API.
 
 Two questions answered:
 1. Can Firecrawl reach pages we can't?  →  Phase 1 probes bom2buy.com (CAPTCHA-gated).
@@ -7,7 +7,7 @@ Two questions answered:
        (ICKEY / Rochester / ONEYAC / RSONLINE / Future) × 2 MPNs each, both as
        plain markdown and as canonical-schema JSON extraction.
 
-Outputs land in test/scraper_test/Firecrawl_Eval_<ts>/.
+Outputs land in test/scraper/Firecrawl_Eval_<ts>/.
 Plan: ~/.claude/plans/cozy-singing-hennessy.md.
 """
 
@@ -26,7 +26,7 @@ import requests
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 ENV_PATH = PROJECT_ROOT / "api" / ".env"
 API_URL = "https://api.firecrawl.dev/v2/scrape"
 SCRAPER_BATCH = TEST_ROOT / "BatchTest_20260520_07_40_03"

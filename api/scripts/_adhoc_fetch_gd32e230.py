@@ -1,6 +1,6 @@
-"""One-off ad-hoc fetch — 3 GD32E230 MCUs through all 5 distributor APIs.
+﻿"""One-off ad-hoc fetch — 3 GD32E230 MCUs through all 5 distributor APIs.
 
-Output lands in `test/api_test/temp_GD32E230_<ts>/` (the `temp_` prefix keeps
+Output lands in `test/api/temp_GD32E230_<ts>/` (the `temp_` prefix keeps
 it visibly separate from the canonical `BatchTest_<ts>/` folders, and signals
 the data is not part of the master xlsx).
 
@@ -39,7 +39,7 @@ def main() -> int:
     sources_to_run = list(B.SOURCES_ALL)
 
     ts = datetime.now().strftime("%Y%m%d_%H_%M_%S")
-    out_dir = PROJECT_ROOT / "test" / "api_test" / f"temp_GD32E230_{ts}"
+    out_dir = PROJECT_ROOT / "test" / "api" / f"temp_GD32E230_{ts}"
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output folder: {out_dir}")
 

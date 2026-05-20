@@ -1,4 +1,4 @@
-"""One-shot: regenerate <MPN>_summary.md inside every existing test/ run folder."""
+﻿"""One-shot: regenerate <MPN>_summary.md inside every existing test/ run folder."""
 from __future__ import annotations
 
 import json
@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _summary import write_summary
 
 TEST_ROOT = Path(__file__).resolve().parent.parent / "test"
-SCAN_SUBDIRS = ("scraper_test", "api_test")
+SCAN_SUBDIRS = ("scraper", "api")
 
 
 def _is_record_json(p: Path) -> bool:
@@ -44,7 +44,7 @@ def _process_dir(d: Path) -> int:
 
 def main() -> int:
     n = 0
-    # test/ is split into scraper_test/ and api_test/. Walk both.
+    # test/ is split into scraper/ and api/. Walk both.
     bases = [TEST_ROOT / s for s in SCAN_SUBDIRS if (TEST_ROOT / s).is_dir()]
     if not bases:
         # Backwards compat: fall through to old flat layout if neither subdir exists.

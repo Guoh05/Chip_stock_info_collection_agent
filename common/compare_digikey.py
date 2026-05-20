@@ -1,9 +1,9 @@
-"""Generate an API-vs-scraper comparison report for the DIGIKEY channel.
+﻿"""Generate an API-vs-scraper comparison report for the DIGIKEY channel.
 
 For each MPN passed on the command line (or the two defaults), finds the
 latest run on each track:
-  - scraper: test/scraper_test/Test_<MPN>_DIGIKEY_<ts>/<MPN>.json
-  - api:     test/api_test/Test_<MPN>_DIGIKEY_<ts>/<MPN>/<MPN>.json
+  - scraper: test/scraper/Test_<MPN>_DIGIKEY_<ts>/<MPN>.json
+  - api:     test/api/Test_<MPN>_DIGIKEY_<ts>/<MPN>/<MPN>.json
 
 …extracts the canonical fields from each, and writes a single comparison
 report under test/comparison/Compare_DIGIKEY_<YYYYMMDD>_<HH>_<MM>_<SS>/.
@@ -22,8 +22,8 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SCRAPER_ROOT = PROJECT_ROOT / "test" / "scraper_test"
-API_ROOT = PROJECT_ROOT / "test" / "api_test"
+SCRAPER_ROOT = PROJECT_ROOT / "test" / "scraper"
+API_ROOT = PROJECT_ROOT / "test" / "api"
 COMPARISON_ROOT = PROJECT_ROOT / "test" / "comparison"
 CHANNEL = "DIGIKEY"
 

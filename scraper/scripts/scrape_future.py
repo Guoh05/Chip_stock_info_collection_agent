@@ -1,4 +1,4 @@
-"""Future Electronics (futureelectronics.com) scraper.
+﻿"""Future Electronics (futureelectronics.com) scraper.
 
 Strategy / cascade:
   1. curl_cffi → blocked by Akamai BMP on the homepage `/` (sec-if-cpt
@@ -58,7 +58,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 CHANNEL = "FUTURE"
 BASE = "https://www.futureelectronics.com"
 TOP_N_VARIANTS = 8  # cap on per-MPN detail pages we'll visit

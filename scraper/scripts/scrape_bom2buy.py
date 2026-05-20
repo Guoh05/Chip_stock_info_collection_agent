@@ -1,4 +1,4 @@
-"""bom2buy.com (买芯片网) — multi-distributor BOM aggregator scraper.
+﻿"""bom2buy.com (买芯片网) — multi-distributor BOM aggregator scraper.
 
 Site model: bom2buy aggregates authorized-distributor listings (Digi-Key, element14,
 Mouser, Wuhan P&S, RS Components, Future, STMicro 直营 …) into one search page.
@@ -53,7 +53,7 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, Page, BrowserContext, TimeoutError as PWTimeout
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 CHANNEL = "BOM2BUY"
 
 _sys = sys
@@ -90,7 +90,7 @@ def _safe(s: str) -> str:
 
 
 def make_run_dir(part: str) -> Path:
-    """Single-MPN entry: test/scraper_test/Test_<MPN>_BOM2BUY_<ts>/"""
+    """Single-MPN entry: test/scraper/Test_<MPN>_BOM2BUY_<ts>/"""
     now = datetime.now()
     name = f"Test_{_safe(part)}_{CHANNEL}_{now.strftime('%Y%m%d')}_{now.strftime('%H_%M_%S')}"
     out = TEST_ROOT / name
@@ -766,10 +766,10 @@ def _read_mpns_file(path: Path) -> list[tuple[str, Optional[str]]]:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("mpn", nargs="?", help="Single MPN to scrape (positional). For batch, use --mpns / --mpns-file.")
-    ap.add_argument("out_dir", nargs="?", help="Output dir for single-MPN mode (default: auto-timestamped under test/scraper_test/)")
+    ap.add_argument("out_dir", nargs="?", help="Output dir for single-MPN mode (default: auto-timestamped under test/scraper/)")
     ap.add_argument("--mpns", help='Semicolon-separated batch: "MPN1:MFR1;MPN2:MFR2;..."')
     ap.add_argument("--mpns-file", help="Text file with one MPN per line (or MPN:MFR)")
-    ap.add_argument("--out", help="Batch output root (default: test/scraper_test/BatchTest_<ts>_bom2buy/)")
+    ap.add_argument("--out", help="Batch output root (default: test/scraper/BatchTest_<ts>_bom2buy/)")
     ap.add_argument("--headless", action="store_true", help="Run Opera headless (default: visible window)")
     ap.add_argument("--per-mpn-delay", type=float, default=PER_MPN_DELAY_SEC)
     ap.add_argument("--long-delay-every", type=int, default=LONG_DELAY_EVERY_N)

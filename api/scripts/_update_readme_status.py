@@ -1,6 +1,6 @@
-"""Regenerate the auto-managed status section of api/README.md.
+﻿"""Regenerate the auto-managed status section of api/README.md.
 
-Reads the most recent test/api_test/BatchTest_<ts>/ folder and replaces the
+Reads the most recent test/api/BatchTest_<ts>/ folder and replaces the
 text between
     <!-- BEGIN AUTO:status ... -->
 and
@@ -26,7 +26,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 README = PROJECT_ROOT / "api" / "README.md"
-API_TEST_ROOT = PROJECT_ROOT / "test" / "api_test"
+API_TEST_ROOT = PROJECT_ROOT / "test" / "api"
 BEGIN_RE = re.compile(r"<!-- BEGIN AUTO:status[^>]*-->", re.DOTALL)
 END_MARKER = "<!-- END AUTO:status -->"
 
@@ -142,7 +142,7 @@ def render_block(today: str, batch_dir: Path | None, stats: dict) -> str:
         out.append(f"| {v} | {ep_cell} | {auth} | {STATUS_ICON.get(st, '?')} |")
     out.append("")
     if not batch_dir or not stats or not stats.get("per_channel"):
-        out.append("_No batch runs yet in `test/api_test/`._")
+        out.append("_No batch runs yet in `test/api/`._")
         out.append("")
     else:
         rel = batch_dir.relative_to(PROJECT_ROOT).as_posix()

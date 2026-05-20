@@ -1,4 +1,4 @@
-"""ICKEY (云汉芯城, ickey.cn) product scraper.
+﻿"""ICKEY (云汉芯城, ickey.cn) product scraper.
 
 ICKEY is a B2B marketplace aggregator (similar to HQEW): one MPN search returns
 N supplier listings, each pointing to a `/detail/<sku_id>/<MPN>.html` page.
@@ -18,7 +18,7 @@ Strategy:
   5. Fetch the detail page (curl_cffi works here — only the search page needs
      JS), parse for canonical schema.
 
-Folder layout: test/scraper_test/Test_<MPN>_ICKEY_<YYYYMMDD>_<HH>_<MM>_<SS>/
+Folder layout: test/scraper/Test_<MPN>_ICKEY_<YYYYMMDD>_<HH>_<MM>_<SS>/
   <MPN>.json, <MPN>_summary.md
   <MPN>_search.html, <MPN>_search.png
   <MPN>_product.html, <MPN>_product.png
@@ -42,7 +42,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 CHANNEL = "ICKEY"
 SEARCH_BASE = "https://search.ickey.cn"
 WWW_BASE = "https://www.ickey.cn"

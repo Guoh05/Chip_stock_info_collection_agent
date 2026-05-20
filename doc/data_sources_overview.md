@@ -1,4 +1,4 @@
-# Data Sources Overview — Cross-Distributor Inventory
+﻿# Data Sources Overview — Cross-Distributor Inventory
 
 **Date:** 2026-05-20 (rev 2 — bom2buy reactivated as a scraper since the 5-19 reports)
 **Sources:** consolidates `api/doc/api_report_v2.md` (2026-05-19) and `scraper/doc/scraper_report_v3.md` (2026-05-19), against the empirical **107-chip** sweeps from 2026-05-20 (new master list: `ref/Shortage Emergency Response List_v2.xlsx`).
@@ -199,7 +199,7 @@ The `doc/merge_for_procurement_rules.md` document encodes filters 1–3 (API win
 
 ## Snapshot of latest sweeps
 
-- API: `test/api_test/BatchTest_20260520_07_40_36/` — 107 chips × 5 sources
-- Scraper: `test/scraper_test/BatchTest_20260520_07_40_03/` — 107 chips × 9 sources (bom2buy now contributes)
+- API: `test/api/BatchTest_20260520_07_40_36/` — 107 chips × 5 sources
+- Scraper: `test/scraper/BatchTest_20260520_07_40_03/` — 107 chips × 9 sources (bom2buy now contributes)
 
 Numbers in this report are computed from those two CSVs. Re-run `python common/merge_batch_for_procurement.py` and re-execute the per-source quality query at the top of this doc to refresh.

@@ -1,4 +1,4 @@
-"""Mouser scraper v2 — curl_cffi-first cascade per project_scrape_state.md plan.
+﻿"""Mouser scraper v2 — curl_cffi-first cascade per project_scrape_state.md plan.
 
 Cascade:
   1. curl_cffi (chrome131) static fetch of canonical /ProductDetail/<mfr>/<MPN>
@@ -33,7 +33,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 CHANNEL = "MOUSER"
 BASE = "https://www.mouser.cn"
 BASE_COM = "https://www.mouser.com"

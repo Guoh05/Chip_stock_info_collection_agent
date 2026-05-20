@@ -1,4 +1,4 @@
-"""DigiKey (digikey.cn) product scraper.
+﻿"""DigiKey (digikey.cn) product scraper.
 
 Strategy (cascade per web-scraper skill):
   1. curl_cffi (chrome131) — KNOWN to fail (Cloudflare 'Just a moment...').
@@ -15,7 +15,7 @@ Output schema (web-scraper skill):
   - paywall: none
   - attempts: per-method log
 
-Folder convention: test/scraper_test/Test_<MPN>_DIGIKEY_<YYYYMMDD>_<HH>_<MM>_<SS>/
+Folder convention: test/scraper/Test_<MPN>_DIGIKEY_<YYYYMMDD>_<HH>_<MM>_<SS>/
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 CHANNEL = "DIGIKEY"
 BASE = "https://www.digikey.cn"
 

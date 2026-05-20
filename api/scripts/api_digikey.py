@@ -1,4 +1,4 @@
-"""Digikey Product Information API v4 client.
+﻿"""Digikey Product Information API v4 client.
 
 Flow:
   1. OAuth2 client_credentials → POST /v1/oauth2/token → bearer access_token.
@@ -7,7 +7,7 @@ Flow:
      subfolder, mirroring the scraper track's LCSC/Future per-variant layout.
 
 Output folder convention:
-    test/api_test/Test_<MPN>_DIGIKEY_<YYYYMMDD>_<HH>_<MM>_<SS>/
+    test/api/Test_<MPN>_DIGIKEY_<YYYYMMDD>_<HH>_<MM>_<SS>/
     ├── parent_summary.md
     ├── <MPN>.json                       (run-level summary + variant index)
     ├── raw_response.json                (full Digikey payload, for audit)
@@ -46,7 +46,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary  # type: ignore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "api_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "api"
 CHANNEL = "DIGIKEY"
 API_BASE = "https://api.digikey.com"
 METHOD_TAG = "api_digikey_v4"

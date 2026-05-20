@@ -1,4 +1,4 @@
-# Per-Source Technical Reference
+﻿# Per-Source Technical Reference
 
 **Purpose.** A cookbook for every distributor source ever evaluated in the scraper track — what engine handles it, what bot protection sits in front of it, how to reach the product detail page, which DOM/JSON fields carry which canonical fields, and which labels are NOT visible on the page and must NOT be invented by the scraper. Read this before touching any `scrape_*.py` file or adding a new source.
 
@@ -8,7 +8,7 @@ For the high-level status and pass-rate report, see `scraper_report_v3.md`. For 
 
 ## Current status snapshot (2026-05-20)
 
-**Latest batch:** `test/scraper_test/BatchTest_20260520_07_40_03/` — 107 MPNs × 9 sources = 963 cells.
+**Latest batch:** `test/scraper/BatchTest_20260520_07_40_03/` — 107 MPNs × 9 sources = 963 cells.
 
 ### Working sources
 

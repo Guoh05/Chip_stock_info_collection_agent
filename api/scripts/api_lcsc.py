@@ -1,4 +1,4 @@
-"""LCSC (立创商城 / 嘉立创开放平台) product search API client.
+﻿"""LCSC (立创商城 / 嘉立创开放平台) product search API client.
 
 POSTs `https://open-api.jlc.com/lcsc/openapi/product/search/global` with
 `{"keyword": <MPN>}` and normalizes results into the canonical 现货/期货
@@ -12,7 +12,7 @@ where
     signature = base64( HMAC-SHA256(string_to_sign, SecretKey) )
     string_to_sign = "{METHOD}\n{path[?query]}\n{timestamp}\n{nonce}\n{body}\n"
 
-Folder convention: test/api_test/Test_<MPN>_LCSC_<YYYYMMDD>_<HH>_<MM>_<SS>/
+Folder convention: test/api/Test_<MPN>_LCSC_<YYYYMMDD>_<HH>_<MM>_<SS>/
 with per-variant subfolders.
 
 Usage:
@@ -43,7 +43,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary  # type: ignore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "api_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "api"
 CHANNEL = "LCSC"
 API_HOST = "https://open-api.jlc.com"
 SEARCH_PATH = "/lcsc/openapi/product/search/global"

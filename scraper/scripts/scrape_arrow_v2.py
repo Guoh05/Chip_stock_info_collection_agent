@@ -1,4 +1,4 @@
-"""Arrow scraper v2 — curl_cffi-first cascade per project_scrape_state.md plan.
+﻿"""Arrow scraper v2 — curl_cffi-first cascade per project_scrape_state.md plan.
 
 Cascade:
   1. curl_cffi (chrome131) static fetch of canonical product URL
@@ -39,7 +39,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "common"))
 from _summary import write_summary
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
 CHANNEL = "ARROW"
 BASE = "https://www.arrow.com"
 

@@ -26,7 +26,8 @@ Master input (2026-05-20+):
     Legacy `Chip_DataSource_Master.xlsx` (header on row 4) is still supported
     if explicitly passed via --xlsx — `load_chip_list` detects and falls back.
 
-Outputs under `test/scraper_test/BatchTest_<YYYYMMDD>_<HH_MM_SS>/`:
+Outputs under `<env_root>/scraper/BatchTest_<YYYYMMDD>_<HH_MM_SS>/`,
+where `<env_root>` is `test/` (default) or `production/` (with --env prod):
     batch_summary.md                — TL;DR + per-channel stats + highlights
     batch_index.csv / .xlsx         — v3 long form (warehouse-exploded)
     batch_index.json                — machine-readable long form
@@ -36,11 +37,12 @@ Outputs under `test/scraper_test/BatchTest_<YYYYMMDD>_<HH_MM_SS>/`:
                                        (populated by the scraper subprocess)
 
 Usage:
-    .venv/Scripts/python.exe scraper/scripts/batch_scraper_test.py
+    .venv/Scripts/python.exe scraper/scripts/batch_scraper_test.py             # test env
     .venv/Scripts/python.exe scraper/scripts/batch_scraper_test.py --limit 3
     .venv/Scripts/python.exe scraper/scripts/batch_scraper_test.py --only LCSC,HQEW
     .venv/Scripts/python.exe scraper/scripts/batch_scraper_test.py --resume
     .venv/Scripts/python.exe scraper/scripts/batch_scraper_test.py --no-bom2buy
+    .venv/Scripts/python.exe scraper/scripts/batch_scraper_test.py --env prod  # write to production/scraper/
 
 bom2buy preconditions (default ON, --no-bom2buy to skip):
     1. Open Opera, navigate to https://www.bom2buy.com/, solve IconCaptcha once.
@@ -71,7 +73,10 @@ from openpyxl.utils import get_column_letter
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = PROJECT_ROOT / "scraper" / "scripts"
-SCRAPER_TEST_ROOT = PROJECT_ROOT / "test" / "scraper_test"
+ENV_ROOTS = {
+    "test": PROJECT_ROOT / "test",
+    "prod": PROJECT_ROOT / "production",
+}
 DEFAULT_XLSX = PROJECT_ROOT / "ref" / "Shortage Emergency Response List_v2.xlsx"
 DEFAULT_SHEET = "Part List Modify"
 DEFAULT_MPN_COL = "Manufacture Part Number"
@@ -1018,6 +1023,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--no-bom2buy", dest="with_bom2buy", action="store_false",
                         help="Skip the bom2buy post-step (e.g. for headless CI runs that can't "
                              "drive Opera).")
+    parser.add_argument("--env", choices=("test", "prod"), default="test",
+                        help="Output root: 'test' → test/scraper/ (default), 'prod' → production/scraper/.")
     args = parser.parse_args(argv[1:])
 
     channels_used = _parse_only(args.only)
@@ -1059,16 +1066,17 @@ def main(argv: list[str]) -> int:
     print(f"Channels: {channels_used}")
 
     # Batch folder selection
+    scraper_root = ENV_ROOTS[args.env] / "scraper"
     if args.resume:
-        existing = sorted(SCRAPER_TEST_ROOT.glob("BatchTest_*"))
+        existing = sorted(scraper_root.glob("BatchTest_*"))
         if not existing:
             print("[resume] no existing BatchTest_* folder; creating new one.")
             args.resume = False
     if not args.resume:
         now = datetime.now()
-        batch_dir = SCRAPER_TEST_ROOT / f"BatchTest_{now.strftime('%Y%m%d')}_{now.strftime('%H_%M_%S')}"
+        batch_dir = scraper_root / f"BatchTest_{now.strftime('%Y%m%d')}_{now.strftime('%H_%M_%S')}"
     else:
-        batch_dir = sorted(SCRAPER_TEST_ROOT.glob("BatchTest_*"))[-1]
+        batch_dir = sorted(scraper_root.glob("BatchTest_*"))[-1]
         print(f"[resume] using existing batch folder {batch_dir.name}")
     batch_dir.mkdir(parents=True, exist_ok=True)
     print(f"Batch folder: {batch_dir}")
