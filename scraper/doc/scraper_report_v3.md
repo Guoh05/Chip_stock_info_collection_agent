@@ -1,4 +1,4 @@
-# Web Scraper Test Report v3 — 9 Working Sources + Batch Driver + Audited Data
+﻿# Web Scraper Test Report v3 — 9 Working Sources + Batch Driver + Audited Data
 
 **Date:** 2026-05-20 (rev. since 2026-05-19 — bom2buy recovered via Opera-profile session reuse + master input swapped to Shortage Emergency Response List v2)
 **Scope of changes since v2:** 4 → 9 working scrapers, 3 additional sources evaluated and dropped, batch driver + warehouse-exploded `batch_index.csv` schema aligned with the API track, comprehensive audit of every scraper to remove fabricated labels ("uncertain → blank, never invent"), **bom2buy default post-step in the batch driver**, **master input migrated to `ref/Shortage Emergency Response List_v2.xlsx` sheet `Part List Modify` (107 unique MPNs after dedup, MPN col `Manufacture Part Number`)**.
@@ -118,7 +118,7 @@ Every channel's per-variant record MUST emit these five fields. They are the cro
 ## Folder layout (v3)
 
 ```
-test/scraper_test/BatchTest_<YYYYMMDD>_<HH_MM_SS>/
+test/scraper/BatchTest_<YYYYMMDD>_<HH_MM_SS>/
 ├── batch_input.csv                   ← N rows (verbatim input chips)
 ├── batch_index.csv / .xlsx           ← warehouse-exploded long form (26 cols)
 ├── batch_index.json                  ← per (chip × source) record incl. extracted_best
@@ -304,7 +304,7 @@ Batch driver + shared utilities:
 - `scraper/scripts/batch_scraper_test.py` — orchestrator with `--mpns` / `--xlsx` / `--only` / `--resume` / `--sequential`, parallel channel dispatch by default.
 - `scraper/scripts/_update_readme_status.py` — refreshes the `<!-- BEGIN AUTO:status -->` block in `scraper/README.md` **and** the `<!-- BEGIN AUTO:source_status -->` block in `scraper/doc/source_technical_reference.md` after a batch. Fires from three places: end of `batch_scraper_test.py`, the `.claude/hooks/readme_postupdate.py` PostToolUse hook, and manual invocation.
 - `common/_summary.py` — `<MPN>_summary.md` renderer; dynamic extra columns (MOQ, batch_code, listing_date, …). Used by both scraper and api tracks.
-- `common/_backfill_summaries.py` — one-shot util to regenerate every `*_summary.md` under `test/scraper_test/` and `test/api_test/`.
+- `common/_backfill_summaries.py` — one-shot util to regenerate every `*_summary.md` under `test/scraper/` and `test/api/`.
 
 Documentation:
 - `scraper/doc/scraper_report_v3.md` — **this file** (supersedes v2).

@@ -1,4 +1,4 @@
-# Distributor API Test Report v1 — Mouser + Digikey
+﻿# Distributor API Test Report v1 — Mouser + Digikey
 
 **Date:** 2026-05-17 (first iteration of the API track)
 **Test parts:** `BT168GW,115` (WeEn SCR, SC-73), `STM32G030F6P6` (ST 32-bit MCU, TSSOP-20)
@@ -32,7 +32,7 @@ Site-native fields are preserved verbatim under `site_*` keys (`site_availabilit
 ## Folder layout (per run)
 
 ```
-test/api_test/Test_<MPN>_<CHANNEL>_<YYYYMMDD>_<HH>_<MM>_<SS>/
+test/api/Test_<MPN>_<CHANNEL>_<YYYYMMDD>_<HH>_<MM>_<SS>/
 ├── parent_summary.md              # Markdown overview + variant index
 ├── <MPN>.json                     # Parent run record + variants_summary[]
 ├── raw_response.json              # Full API payload (for audit)
@@ -42,7 +42,7 @@ test/api_test/Test_<MPN>_<CHANNEL>_<YYYYMMDD>_<HH>_<MM>_<SS>/
     └── <variant_mpn>_summary.md   # Rendered by common/_summary.py
 ```
 
-Mirrors the scraper track's LCSC v3 / Future Electronics layout; the only differences are `test/api_test/` instead of `test/scraper_test/` and the per-variant raw file naming.
+Mirrors the scraper track's LCSC v3 / Future Electronics layout; the only differences are `test/api/` instead of `test/scraper/` and the per-variant raw file naming.
 
 ---
 
@@ -88,7 +88,7 @@ Each item in `SearchResults.Parts[]` carries:
 | `STM32G030F6P6` | 1 (`STM32G030F6P6`, Mouser P/N `511-STM32G030F6P6`) | 现货 **108,590** + `FactoryStock 0` (LeadTime `210 天数` → unbounded factory order); 8 price tiers ¥9.00 → ¥4.93 |
 | `BT168GW,115` | 1 (`BT168GW,115`, Mouser P/N `771-BT168GW-T/R`) | 现货 **0** + on-order **13,694** arriving 2026-05-26 (LeadTime `112 天数`); 9 tiers ¥4.83 → ¥0.864 |
 
-Runs: `test/api_test/Test_STM32G030F6P6_MOUSER_20260517_12_49_48/` and `test/api_test/Test_BT168GW_115_MOUSER_20260517_12_50_52/`.
+Runs: `test/api/Test_STM32G030F6P6_MOUSER_20260517_12_49_48/` and `test/api/Test_BT168GW_115_MOUSER_20260517_12_50_52/`.
 
 ### Notes / gotchas
 
@@ -140,7 +140,7 @@ Each Product carries:
 | `STM32G030F6P6` | 6 (1 exact + 5 fuzzy) — `STM32G030F6P6` (497-STM32G030F6P6-ND, 现货 **76,636**, 30 weeks lead, 9 tiers $1.58→$0.766), `STM32G030F6P6TR` (497-STM32G030F6P6TR-ND, 现货 12,073), plus 4 unrelated keyword matches (`SM-I-010`, `U024-V2`, `M137`, `SM-I-005`) | Exact match returns the base MPN; the TR variant is also surfaced (separate folder). 4 stale keyword matches are noise (kept as variants so we don't accidentally drop a real alternative) |
 | `BT168GW,115` | 2 — `BT168GW,115` (1740-1084-2-ND, 现货 **4,424**, 26 weeks lead, 6 tiers $0.178→$0.130) + `BT168GWF,115` (1740-1085-2-ND, 现货 37,597) | The base part and the "F" variant are clearly distinct SKUs — kept separate per the MPN-variant rule |
 
-Runs: `test/api_test/Test_STM32G030F6P6_DIGIKEY_20260517_12_56_11/` and `test/api_test/Test_BT168GW_115_DIGIKEY_20260517_12_56_36/`.
+Runs: `test/api/Test_STM32G030F6P6_DIGIKEY_20260517_12_56_11/` and `test/api/Test_BT168GW_115_DIGIKEY_20260517_12_56_36/`.
 
 ### Notes / gotchas
 

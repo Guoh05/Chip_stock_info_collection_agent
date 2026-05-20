@@ -1,6 +1,6 @@
-# Firecrawl evaluation findings — 2026-05-20T11:48:37
+﻿# Firecrawl evaluation findings — 2026-05-20T11:48:37
 
-**Run dir:** `test\scraper_test\Firecrawl_Eval_20260520_11_41_37`
+**Run dir:** `test\scraper\Firecrawl_Eval_20260520_11_41_37`
 **Plan:** `~/.claude/plans/cozy-singing-hennessy.md`
 
 ## Credit usage

@@ -1,4 +1,4 @@
-# Web Scraper Test Report v2 — 6 Distributor Sources
+﻿# Web Scraper Test Report v2 — 6 Distributor Sources
 
 **Date:** 2026-05-17 (supersedes v1)
 **Test parts used:** STM32G030F6P6 (32-bit MCU), BT168GW,115 (SCR), ATXMEGA32E5-ANR (8-bit MCU), PIC16F18446T-I/SS (8-bit MCU). Earlier baseline: HT66F017-HF on LCSC.
@@ -164,7 +164,7 @@ Every channel's per-variant record MUST emit these five scalar/structure fields,
 - `scraper/scripts/scrape_mouser_v2.py` — cascade with attempts log; blocked.
 - `scraper/scripts/scrape_arrow_v2.py` — cascade with attempts log; blocked.
 - `common/_summary.py` — shared `<MPN>_summary.md` generator; renders dynamic extra columns (MOQ, 备注, batch_code, listing_date) when breakdown rows carry them. Used by both scraper and api tracks.
-- `common/_backfill_summaries.py` — one-shot util to regenerate every summary under `test/scraper_test/` and `test/api_test/` against the current template (walks one level deep for per-variant subfolders).
+- `common/_backfill_summaries.py` — one-shot util to regenerate every summary under `test/scraper/` and `test/api/` against the current template (walks one level deep for per-variant subfolders).
 - `scraper/requirements.txt` — pinned deps for the scraper track.
 - `scraper/doc/scraper_report_v1.md` — superseded by this report.
 - Memory: `MEMORY.md` indexes the three feedback rules — `feedback_test_output_folder.md` (folder convention), `feedback_stock_breakdown_fields.md` (canonical schema), `feedback_mpn_variant_grouping.md` (variant grouping), `feedback_site_native_fields.md` (preserve site-native wording).

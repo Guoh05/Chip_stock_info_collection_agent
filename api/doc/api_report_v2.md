@@ -1,4 +1,4 @@
-# Distributor API Test Report v2 — 5 distributors, warehouse-granular batch
+﻿# Distributor API Test Report v2 — 5 distributors, warehouse-granular batch
 
 **Date:** 2026-05-19 (supersedes `api_report_v1.md` from 2026-05-17, which only covered Mouser + Digikey)
 **Scope:** 5 working distributor APIs + batch driver + per-warehouse output schema
@@ -16,7 +16,7 @@
 | 4 | **ARROW_艾睿** Pricing & Availability v4 | `GET api.arrow.com/itemservice/v4/en/search/list` | `login` + `apikey` querystring (+ same pair in `req` JSON) | 40.8 % | Inventory republished across Verical / Arrow ACNA / Arrow EUROPE — dedup by `(fohQty, shipsFrom, shipsIn)` |
 | 5 | **LCSC_立创商城** Mall OpenAPI | `POST open-api.jlc.com/lcsc/openapi/product/search/global` | HMAC-SHA256 + `Authorization: JOP …` | 74.5 % (41/55 — quota-limited subset) | Quota: **200/day per endpoint**. Daily cap hit during the 103-chip sweep |
 
-Latest full sweep: **`test/api_test/BatchTest_20260519_17_54_29/`** — 103 chips × 5 sources, 5.36 min wall clock (4-source parallelism per chip), 980 warehouse rows in `batch_index`. LCSC contributed 55 of the 103 chips (other 48 hit the 200/day quota; their rows were filtered out — re-run after quota reset to fill in).
+Latest full sweep: **`test/api/BatchTest_20260519_17_54_29/`** — 103 chips × 5 sources, 5.36 min wall clock (4-source parallelism per chip), 980 warehouse rows in `batch_index`. LCSC contributed 55 of the 103 chips (other 48 hit the 200/day quota; their rows were filtered out — re-run after quota reset to fill in).
 
 ---
 
@@ -39,7 +39,7 @@ Site-native fields are preserved verbatim under `site_*` keys per the "site-nati
 ## Folder layout (per chip × source)
 
 ```
-test/api_test/Test_<MPN>_<SOURCE>_<YYYYMMDD>_<HH>_<MM>_<SS>/    # single-call shape
+test/api/Test_<MPN>_<SOURCE>_<YYYYMMDD>_<HH>_<MM>_<SS>/    # single-call shape
 └── (inside a BatchTest_<ts>/)                                  # batch driver writes here
     Test_<MPN>_<SOURCE>/                                        # no inner timestamp inside a batch
     ├── parent_summary.md                                       # Markdown overview + variant index
@@ -258,7 +258,7 @@ The search endpoint does NOT expose factory lead time or detailed spec parameter
 
 ## Batch driver (`api/scripts/batch_api_test.py`)
 
-Runs every chip in `ref/Chip_DataSource_Master.xlsx` through any subset of the 5 sources and produces a consolidated, warehouse-granular result set under `test/api_test/BatchTest_<YYYYMMDD>_<HH_MM_SS>/`.
+Runs every chip in `ref/Chip_DataSource_Master.xlsx` through any subset of the 5 sources and produces a consolidated, warehouse-granular result set under `test/api/BatchTest_<YYYYMMDD>_<HH_MM_SS>/`.
 
 ### Parallelism model
 
