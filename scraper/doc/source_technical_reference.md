@@ -6,7 +6,7 @@ For the high-level status and pass-rate report, see `scraper_report_v3.md`. For 
 
 <!-- BEGIN AUTO:source_status — managed by scraper/scripts/_update_readme_status.py. Hand edits between these markers will be overwritten on the next batch run. -->
 
-## Current status snapshot (2026-05-20)
+## Current status snapshot (2026-05-21)
 
 **Latest batch:** `test/scraper/BatchTest_20260520_07_40_03/` — 107 MPNs × 9 sources = 963 cells.
 

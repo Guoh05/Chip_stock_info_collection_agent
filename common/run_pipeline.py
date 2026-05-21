@@ -356,8 +356,11 @@ def main(argv: list[str] | None = None) -> int:
 
     for phase in PHASE_ORDER:
         ph = state["phases"][phase]
-        if ph.get("status") == "ok":
-            print(f"[{phase}] already complete; skipping (resume).")
+        if ph.get("status") in ("ok", "skipped"):
+            # Both terminal on resume: ok means done, skipped means the user
+            # deliberately opted out earlier. To re-enable a skipped phase,
+            # start fresh (drop the state file or run without --resume).
+            print(f"[{phase}] {ph['status']} — leaving alone.")
             continue
         if skip_map[phase]:
             ph["status"] = "skipped"
