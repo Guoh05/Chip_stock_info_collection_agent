@@ -269,7 +269,7 @@ def _passthrough_common(args: argparse.Namespace) -> list[str]:
 def print_actionable_error(state: dict, env: str, phase: str, err: PhaseFailure) -> None:
     sp = state_path(env)
     print()
-    print(f"❌ Phase {phase!r} failed")
+    print(f"[FAILED] Phase {phase!r} failed")
     print(f"   Error: {err.msg}")
     print(f"   State: {sp.relative_to(PROJECT_ROOT)}")
     print()

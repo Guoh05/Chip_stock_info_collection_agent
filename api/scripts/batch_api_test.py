@@ -1107,6 +1107,16 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--xlsx", type=Path, default=DEFAULT_XLSX,
                         help=f"Path to the chip-list xlsx (default: {DEFAULT_XLSX})")
+    parser.add_argument("--mpns", type=str, default=None,
+                        help="Semicolon-separated MPN list — overrides --xlsx entirely. "
+                             "Optional `MPN:expected_mfr` syntax per entry: "
+                             "'STM32G030F6P6:STM;BT168GW,115:WEEN'. NB: MPNs containing "
+                             "`:` (e.g. typo'd `BTA206X-800CT:127`) will be wrongly "
+                             "chopped — use --mpns-file with tab separator for those.")
+    parser.add_argument("--mpns-file", type=str, default=None,
+                        help="Tab-separated file: one MPN per line, format 'MPN<TAB>MFR' "
+                             "(MFR optional). Lines starting with `#` are comments. "
+                             "Overrides --xlsx; takes precedence over --mpns.")
     parser.add_argument("--limit", type=int, default=None,
                         help="Process only the first N valid MPNs (dry-run aid).")
     parser.add_argument("--only", action="append", choices=SOURCES_ALL, default=None,
@@ -1151,10 +1161,39 @@ def main(argv: list[str]) -> int:
         print(f"ERROR: missing in api/.env — {', '.join(creds_missing)}", file=sys.stderr)
         return 2
 
-    chips, skipped = load_chip_list(args.xlsx)
+    # Chip-list source: --mpns-file > --mpns > --xlsx (mirrors scraper batch driver).
+    if args.mpns_file:
+        chips = []
+        skipped = []
+        for i, line in enumerate(Path(args.mpns_file).read_text(encoding="utf-8").splitlines()):
+            line = line.rstrip("\r\n")
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            if "\t" in line:
+                mpn_s, mfr_s = line.split("\t", 1)
+            else:
+                mpn_s, mfr_s = line, ""
+            chips.append({"row": i + 1, "input_mpn": mpn_s.strip(), "expected_mfr": mfr_s.strip()})
+        print(f"Loaded {len(chips)} chip rows from --mpns-file (xlsx ignored)")
+    elif args.mpns:
+        chips = []
+        skipped = []
+        for i, raw in enumerate(args.mpns.split(";")):
+            entry = raw.strip()
+            if not entry:
+                continue
+            if ":" in entry:
+                mpn_s, mfr_s = entry.split(":", 1)
+                mpn_s, mfr_s = mpn_s.strip(), mfr_s.strip()
+            else:
+                mpn_s, mfr_s = entry, ""
+            chips.append({"row": i + 1, "input_mpn": mpn_s, "expected_mfr": mfr_s})
+        print(f"Loaded {len(chips)} chip rows from --mpns flag (xlsx ignored)")
+    else:
+        chips, skipped = load_chip_list(args.xlsx)
+        print(f"Loaded {len(chips)} chip rows ({len(skipped)} skipped) from {args.xlsx.name}")
     if args.limit:
         chips = chips[: args.limit]
-    print(f"Loaded {len(chips)} chip rows ({len(skipped)} skipped) from {args.xlsx.name}")
     print(f"Sources: {', '.join(sources_to_run)}")
 
     now = datetime.now()
