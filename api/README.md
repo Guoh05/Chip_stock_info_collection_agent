@@ -111,6 +111,12 @@ registered on mouser.com would be needed.
 
 ## Run
 
+> **For end-to-end runs** (API + scraper + merge into a procurement xlsx) use
+> `common/run_pipeline.py` — it orchestrates this driver alongside the scraper
+> + merge with state tracking + resume. See `doc/run_pipeline_workflow.md`.
+> The commands below are the **per-track** entry, useful for debugging the API
+> track in isolation.
+
 ### Single MPN
 ```bash
 .venv/Scripts/python.exe api/scripts/api_mouser.py STM32G030F6P6

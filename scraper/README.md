@@ -61,6 +61,12 @@ Optional `argv[2]` overrides the output directory (used by the batch driver — 
 
 ## Batch run — all chips from the master sheet
 
+> **For end-to-end runs** (scraper + API + merge into a procurement xlsx) use
+> `common/run_pipeline.py` — it orchestrates this driver alongside the API
+> track + merge with state tracking + resume, and isolates bom2buy as its own
+> phase. See `doc/run_pipeline_workflow.md`. The commands below are the
+> **per-track** entry, useful for debugging the scraper track in isolation.
+
 **Before running with the default bom2buy step:** open Opera, navigate to `https://www.bom2buy.com/`, solve the IconCaptcha once, then fully close Opera. The captcha session persists for hours-to-days and the batch driver reuses it.
 
 ```bash

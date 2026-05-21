@@ -8,7 +8,7 @@ first-party APIs (`api/`), or both.
 
 - `scraper/` — Web-scraping per channel. Has its own `scripts/`, `doc/`, `README.md`.
 - `api/` — First-party REST APIs. Same internal layout.
-- `common/` — Shared code (canonical summary renderer + cross-track utilities).
+- `common/` — Shared code: summary renderer, merge script, **pipeline orchestrator** (`run_pipeline.py`, default entry for end-to-end runs).
 - `test/` — Dev / exploratory output. Split into `scraper/`, `api/`, `merged/`, `comparison/`.
 - `production/` — Production output. Mirrors `test/`: `scraper/`, `api/`, `merged/`. Drivers + the merge script accept `--env {test,prod}` (default `test`).
 - `ref/` — Source-of-truth inputs (chip list xlsx, datasheets).
@@ -53,6 +53,15 @@ Read it before doing track-specific work.
    `doc/merge_for_procurement_rules.md` in the same change. A PostToolUse
    hook flags field-name drift, but prose only stays current if you re-read
    the doc each time.
+7. **Pipeline orchestrator stays in sync.** When editing the CLI surface,
+   output paths, preconditions, or exit-code semantics of
+   `batch_api_test.py`, `batch_scraper_test.py`,
+   `merge_batch_for_procurement.py`, `scrape_bom2buy.py`, or
+   `_merge_bom2buy_into_batch.py`, also update `common/run_pipeline.py` and
+   `doc/run_pipeline_workflow.md` in the same change. A PostToolUse hook
+   flags edits to the listed files; the semantic judgment (does the
+   orchestrator actually need a change?) is yours. Always run the smoke
+   test from `run_pipeline_workflow.md` after pipeline-component edits.
 
 ## Working scope
 
@@ -73,4 +82,5 @@ rather than editing `scraper/` or `api/`.
 | Batch output data contract | `<track>/doc/batch_output_schema.md` |
 | Per-channel methods + gotchas | `scraper/doc/scraper_report_v3.md`, `api/doc/api_report_v2.md` |
 | Procurement-facing merge rules | `doc/merge_for_procurement_rules.md` |
+| End-to-end pipeline orchestrator | `doc/run_pipeline_workflow.md` |
 | Operational state (current batch IDs, blockers) | `~/.claude/projects/.../memory/MEMORY.md` |
