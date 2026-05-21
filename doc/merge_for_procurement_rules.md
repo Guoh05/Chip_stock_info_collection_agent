@@ -57,41 +57,92 @@ For every `(mpn, source)` where BOTH tracks have status=ok rows (= LCSC, DIGIKEY
 
 Sheet 3 is for QA; not for procurement.
 
+## v1.9 computed columns (Is_orig_manufacture, Is_cheapest, price_rank)
+
+Three columns are computed post-merge (not directly from upstream):
+
+### `Is_orig_manufacture` (bool)
+
+True iff the row's `Warehouse/vender` looks like the manufacturer's own warehouse, computed against `Manufacture`. Three-step fuzzy match:
+
+1. Special-case `"Manufacturer warehouse (X)"` → match `Manufacture` against `X` (the parens content IS the vendor identity).
+2. Otherwise strip any trailing `" (...)"` distributor-SKU parenthetical to avoid SKU strings like `DigiKey (497-STM32C011...)` false-positive-ing on Mfr `STM`.
+3. On the cleaned warehouse string:
+   - Mfr length ≥ 3: substring match either direction. `"Nexperia 安世"` ↔ `"Nexperia"` ✓; `"STMicroelectronics"` ↔ `"STM"` ✓.
+   - Mfr length 1–2 (TI, ON, ST, AD): match against runs of ≥2 consecutive uppercase letters in the **original** warehouse string. Filters out lowercase prepositions like `"on"` in `"Mouser (on order)"`; preserves real abbreviations like `"ON"` in `"ON Semiconductor"`.
+
+Validation against the latest 1700-row merge: 10 unique `(Mfr, Warehouse)` true pairs — all legit; no false positives.
+
+### `Is_cheapest` (bool) + `price_rank` (int)
+
+Grouped by `Manufacture Part Number`, post-VAT-strip:
+
+- `Is_cheapest = True` for the row(s) with the **minimum `Unit price w/o VAT (max qty)`** in that MPN. Ties → all tied-min rows marked True.
+- `price_rank`: dense rank (1, 2, 2, 3) ascending by `Unit price w/o VAT (max qty)`.
+- Rows with null or 0 price are **excluded** from the comparison → `Is_cheapest = False`, `price_rank = blank`.
+- `Unit price w/o VAT (max qty)` (not `(min qty)`) is the comparison key because the max-tier price is the procurement-relevant one.
+
+## VAT-strip rule
+
+For every row where `Trade Currency` ∈ {CNY, RMB, ¥} (case-insensitive), **both** unit-price columns are divided by `1.13` (Chinese VAT rate) and rounded to 6 decimals. Other currencies are left untouched. The constant `VAT_DIVISOR = 1.13` lives in the script; change it there if the rate changes.
+
+This is why the columns are named `Unit price w/o VAT (...)` — for CNY rows they're already pre-VAT; for USD/EUR/JPY they're the as-quoted price.
+
 ## Output workbook
 
-| Sheet name | Filter | Highlight |
-|---|---|---|
-| `高风险有货` | `risk == "high"` AND `Available Quantity > 0` | **None** — every row is in-stock by definition, so a uniform green fill would be uninformative |
-| `全量数据` | All merged rows (post-filter) | Green (`FFC6EFCE`) if `in_stock`; light grey (`FFEEEEEE`) if `Available Quantity == 0`; no fill for `None`-qty (factory lead) |
-| `scraper参考_库存不一致` | Mismatched scraper rows only (see above) | None |
+| Sheet name | Visibility | Filter | Highlight |
+|---|---|---|---|
+| `高风险有货` | **hidden** | `risk == "high"` AND `Available Quantity > 0` | **None** — every row is in-stock by definition |
+| `全量数据` | **visible, default** | All merged rows (post-filter) | Green (`FFC6EFCE`) if `in_stock`; light grey (`FFEEEEEE`) if `Available Quantity == 0`; no fill for `None`-qty (factory lead) |
+| `scraper参考_库存不一致` | **hidden** | Mismatched scraper rows only (see above) | None |
+| `Data dictionary` | visible | One row per `全量数据` column with source + type + description | None |
+| `Source Availability` | visible | Port of the TL;DR table in `doc/data_sources_overview.md` (sans `Best use`) | None |
 
-**Unified sort across all three sheets**: `risk` (`high` → `low` → other → null) → `Manufacture Part Number` (asc) → `Broker name` (asc) → `Available Quantity` (desc). Encoded by `_sort_key()` in the merge script.
+`Data dictionary` and `Source Availability` are reference sheets — content is hardcoded in the merge script (low churn, small data; auto-sync would over-engineer).
+
+**Unified sort across the three data sheets**: `risk` (`high` → `low` → other → null) → `Manufacture Part Number` (asc) → `Broker name` (asc) → `Available Quantity` (desc). Encoded by `_sort_key()` in the merge script.
 
 Shared styling:
-- Header row: bold + `wrap_text` (for the `"Trade \nCurrency"` two-line header), colored by **column range**:
+- Header row: bold + `wrap_text`, colored by **column range** (v1.9 layout):
   - **A–K** (cols 1–11, chip-list metadata + MPN/Manufacture): dark blue `#1F4E78` background + white font.
-  - **L–AC** (cols 12–29, distributor data + 3 business-fill cols): light orange `#FCE4D6` background + black font.
-  - **AD onwards** (cols 30+, `ref_*` audit fields): dark grey `#595959` background + white font.
+  - **L–AF** (cols 12–32, in_stock + distributor data + computed cols + 3 business-fill cols): light orange `#FCE4D6` background + black font.
+  - **AG onwards** (cols 33+, `ref_*` audit fields): dark grey `#595959` background + white font.
 - Freeze panes at A2.
 - AutoFilter dropdowns on the full data range (`A1:<last_col><last_row>`) — procurement can filter in Excel.
-- Column widths: hardcoded from `ref/merged_header_example.xlsx` (sheet `header`), captured in the `COLUMN_WIDTHS` dict in the script. Anything not in the dict falls back to auto-fit (capped 10–50 chars).
+- Column widths: hardcoded in `COLUMN_WIDTHS`; columns not listed fall back to auto-fit (capped 10–50 chars).
 
-### Column list (Sheet 1 & Sheet 2 — 38 cols, in order)
+### Hidden columns (every sheet that carries them)
+
+Default-hidden by `_apply_column_hides()` — can be unhidden manually in Excel:
+
+- All `ref_*` columns (9 cols)
+- `Minimum order qty`
+- `Unit price w/o VAT (min qty)`
+- `Number of price tiers`
+- `price_rank`
+
+That's **13 hidden** out of 41 total in Sheet 2 → **28 visible** by default.
+
+### Column list (Sheet 1 & Sheet 2 — 41 cols, in order)
 
 ```
 Category, Project, EMS/Finish Goods, 12NC_PCBA,
 Manufacture Part Number, Manufacture,
 Quantity, Currency, Current Price, Type, risk,
-Broker name, Data collect method, in_stock,
-Warehouse/vender, Stock Location, Available Quantity,
+in_stock,                                              ← v1.9 A (moved right after risk)
+Broker name, Data collect method,
+Warehouse/vender, Is_orig_manufacture,                 ← v1.9 E (new computed col)
+Is_cheapest, price_rank,                               ← v1.9 F (new computed cols; price_rank hidden)
+Stock Location, Available Quantity,
 ship infor after order placed, Lead Time (Week),
-MOQ, Minimum order qty, Unit price (min qty),
-Maximum order qty, Unit price (max qty), Number of price tiers,
-Trade \nCurrency,
+MOQ, Maximum order qty, Unit price w/o VAT (max qty),  ← v1.9 D (max-qty pair before min) + B (rename)
+Minimum order qty, Unit price w/o VAT (min qty),       ← min-qty pair hidden by default
+Number of price tiers,                                 ← hidden by default
+Trade Currency,                                        ← v1.9 (no literal \n)
 Date of Code, Reel/Cut Reel, Certificate of Conformity(Yes/No),
 ref_Warehouse/vender ID, ref_returned_mpn, ref_vendor_sku,
 ref_returned_mfr, ref_mfr_match, ref_is_mirror, ref_datasheet_url,
-ref_status, ref_error
+ref_status, ref_error                                  ← all 9 ref_* hidden by default
 ```
 
 Header → source mapping is defined by `COLUMN_SOURCE_MAP` in the script. Each entry is one of:
@@ -99,6 +150,7 @@ Header → source mapping is defined by `COLUMN_SOURCE_MAP` in the script. Each 
 - `("merge", <csv_field>)` — copy from upstream CSV row (rename only).
 - `("chip",  <chip_list_header>)` — first-row chip-list lookup.
 - `("lead_time", "lead_time_days")` — days-to-weeks transform.
+- `("computed", None)` — filled by post-processing pass (Is_orig_manufacture, Is_cheapest, price_rank).
 - `("blank", None)` — empty placeholder (procurement fills in later).
 
 Three "blank" columns (`Date of Code`, `Reel/Cut Reel`, `Certificate of Conformity(Yes/No)`) are written empty for procurement to fill.
@@ -112,9 +164,11 @@ Quantity, Currency, Current Price, Type, risk,
 Broker name, in_stock,
 ref_returned_mpn, Warehouse/vender, Available Quantity,
 ship infor after order placed, Lead Time (Week),
-MOQ, Unit price (min qty), Trade \nCurrency,
+MOQ, Unit price w/o VAT (min qty), Trade Currency,
 ref_datasheet_url, note
 ```
+
+Sheet 3 inherits the price-column rename + VAT-strip from v1.9 B+C but **does not** carry the three new computed columns (`Is_orig_manufacture` / `Is_cheapest` / `price_rank`) — those are meaningless on a QA-only subset where rows are not per-MPN-comparable.
 
 The `note` column is generated by the merge (`"API max qty X vs scraper max Y"`).
 
@@ -130,7 +184,7 @@ Two currency-shaped columns exist and **mean different things**:
 | Column | Source | Meaning |
 |---|---|---|
 | `Currency` | chip list col H | the buying currency the EMS expects to pay in |
-| `Trade \nCurrency` (literal newline) | upstream `currency` | the distributor's quoted currency on that row |
+| `Trade Currency` | upstream `currency` | the distributor's quoted currency on that row — drives the VAT-strip rule |
 
 No FX normalisation in v1.
 

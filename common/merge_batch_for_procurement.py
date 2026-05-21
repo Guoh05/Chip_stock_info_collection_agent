@@ -60,6 +60,9 @@ CHIP_FIELDS = [
 #   ("merge", <old_csv_key>)        → copy from upstream CSV row (renamed)
 #   ("chip",  <chip_list_header>)   → look up in chip_meta[normalized_mpn]
 #   ("lead_time", <old_csv_key>)    → days→weeks transform
+#   ("computed", None)              → filled in post-processing (Is_orig_manufacture,
+#                                      Is_cheapest, price_rank). build_output_row
+#                                      leaves these as None.
 #   ("blank", None)                 → empty (business to fill)
 COLUMN_SOURCE_MAP: dict[str, tuple[str, str | None]] = {
     "Category":                              ("chip", "Category"),
@@ -73,21 +76,24 @@ COLUMN_SOURCE_MAP: dict[str, tuple[str, str | None]] = {
     "Current Price":                         ("chip", "Current Price"),
     "Type":                                  ("chip", "Type"),
     "risk":                                  ("chip", "risk"),
+    "in_stock":                              ("merge", "in_stock"),         # v1.9 A: moved here (after risk)
     "Broker name":                           ("merge", "source"),
     "Data collect method":                   ("merge", "track"),
-    "in_stock":                              ("merge", "in_stock"),
     "Warehouse/vender":                      ("merge", "warehouse"),
+    "Is_orig_manufacture":                   ("computed", None),            # v1.9 E
+    "Is_cheapest":                           ("computed", None),            # v1.9 F
+    "price_rank":                            ("computed", None),            # v1.9 F
     "Stock Location":                        ("merge", "ships_from"),
     "Available Quantity":                    ("merge", "stockpool_qty"),
     "ship infor after order placed":         ("merge", "ship_text"),
     "Lead Time (Week)":                      ("lead_time", "lead_time_days"),
     "MOQ":                                   ("merge", "moq"),
+    "Maximum order qty":                     ("merge", "max_break_qty"),    # v1.9 D: moved before min
+    "Unit price w/o VAT (max qty)":          ("merge", "price_at_max_qty"), # v1.9 B+C: rename + VAT-strip if CNY
     "Minimum order qty":                     ("merge", "min_break_qty"),
-    "Unit price (min qty)":                  ("merge", "price_at_min_qty"),
-    "Maximum order qty":                     ("merge", "max_break_qty"),
-    "Unit price (max qty)":                  ("merge", "price_at_max_qty"),
+    "Unit price w/o VAT (min qty)":          ("merge", "price_at_min_qty"), # v1.9 B+C
     "Number of price tiers":                 ("merge", "num_price_tiers"),
-    "Trade \nCurrency":                      ("merge", "currency"),
+    "Trade Currency":                        ("merge", "currency"),         # v1.9: dropped literal \n in header
     "Date of Code":                          ("blank", None),
     "Reel/Cut Reel":                         ("blank", None),
     "Certificate of Conformity(Yes/No)":     ("blank", None),
@@ -101,10 +107,13 @@ COLUMN_SOURCE_MAP: dict[str, tuple[str, str | None]] = {
     "ref_status":                            ("merge", "status"),
     "ref_error":                             ("merge", "error"),
 }
-OUTPUT_COLUMNS = list(COLUMN_SOURCE_MAP.keys())   # 38 columns, in output order
+OUTPUT_COLUMNS = list(COLUMN_SOURCE_MAP.keys())   # 41 columns, in output order
 
 # Sheet 3 (cross-validation reference) — narrower subset, same renames, plus
 # the unmapped `note` column (not in COLUMN_SOURCE_MAP — handled in builder).
+# Per v1.9 decision: Sheet 3 inherits the price rename + VAT strip but NOT the
+# computed columns (Is_orig_manufacture / Is_cheapest / price_rank) — meaningless
+# on the QA-only mismatched subset.
 MISMATCH_COLUMNS = [
     "Category", "Project", "EMS/Finish Goods", "12NC_PCBA",
     "Manufacture Part Number", "Manufacture",
@@ -112,12 +121,32 @@ MISMATCH_COLUMNS = [
     "Broker name", "in_stock",
     "ref_returned_mpn", "Warehouse/vender", "Available Quantity",
     "ship infor after order placed", "Lead Time (Week)",
-    "MOQ", "Unit price (min qty)", "Trade \nCurrency",
+    "MOQ", "Unit price w/o VAT (min qty)", "Trade Currency",
     "ref_datasheet_url", "note",
 ]
 
 LEAD_TIME_HEADER = "Lead Time (Week)"
 QTY_HEADER = "Available Quantity"
+MAX_PRICE_HEADER = "Unit price w/o VAT (max qty)"
+MIN_PRICE_HEADER = "Unit price w/o VAT (min qty)"
+TRADE_CURRENCY_HEADER = "Trade Currency"
+
+# v1.9 C — pre-VAT conversion for CNY/RMB rows.
+VAT_DIVISOR = 1.13
+CNY_LIKE_CURRENCIES = {"CNY", "RMB", "¥"}
+
+# v1.9 G — columns hidden by default in every sheet that carries them.
+HIDDEN_COLUMNS_EXPLICIT = {
+    "Minimum order qty",
+    "Unit price w/o VAT (min qty)",
+    "Number of price tiers",
+    "price_rank",
+}
+# (All columns starting with `ref_` are also hidden — handled inline.)
+
+# v1.9 H — sheets hidden by default (still present in the workbook, can be
+# unhidden manually in Excel). Sheet 2 stays as the default active.
+HIDDEN_SHEETS = {"高风险有货", "scraper参考_库存不一致"}
 
 # Per-column widths from ref/merged_header_example (sheet `header`) — matched
 # to procurement's preferred layout. Columns not listed fall back to auto-fit.
@@ -125,12 +154,17 @@ COLUMN_WIDTHS: dict[str, float] = {
     "Category": 12.0, "Project": 11.0, "EMS/Finish Goods": 18.0, "12NC_PCBA": 27.0,
     "Manufacture Part Number": 25.0, "Manufacture": 13.0,
     "Quantity": 10.0, "Currency": 13.0, "Current Price": 15.0, "Type": 10.0, "risk": 13.0,
-    "Broker name": 33.0, "Data collect method": 21.0, "in_stock": 10.0,
-    "Warehouse/vender": 58.9, "Stock Location": 26.0, "Available Quantity": 29.9,
+    "in_stock": 10.0,
+    "Broker name": 33.0, "Data collect method": 21.0,
+    "Warehouse/vender": 58.9,
+    "Is_orig_manufacture": 19.0, "Is_cheapest": 12.0, "price_rank": 11.0,
+    "Stock Location": 26.0, "Available Quantity": 29.9,
     "ship infor after order placed": 45.0, "Lead Time (Week)": 18.0,
-    "MOQ": 10.0, "Minimum order qty": 19.0, "Unit price (min qty)": 22.0,
-    "Maximum order qty": 19.0, "Unit price (max qty)": 22.0, "Number of price tiers": 23.0,
-    "Trade \nCurrency": 10.0,
+    "MOQ": 10.0,
+    "Maximum order qty": 19.0, "Unit price w/o VAT (max qty)": 26.0,
+    "Minimum order qty": 19.0, "Unit price w/o VAT (min qty)": 26.0,
+    "Number of price tiers": 23.0,
+    "Trade Currency": 15.0,
     "Date of Code": 14.0, "Reel/Cut Reel": 15.0, "Certificate of Conformity(Yes/No)": 35.0,
     "ref_Warehouse/vender ID": 25.0, "ref_returned_mpn": 18.0, "ref_vendor_sku": 19.0,
     "ref_returned_mfr": 31.0, "ref_mfr_match": 15.0, "ref_is_mirror": 13.0,
@@ -145,10 +179,10 @@ RISK_RANK = {"high": 0, "low": 1}
 GREEN = PatternFill(start_color="FFC6EFCE", end_color="FFC6EFCE", fill_type="solid")
 GREY = PatternFill(start_color="FFEEEEEE", end_color="FFEEEEEE", fill_type="solid")
 
-# Three-zone header palette:
+# Three-zone header palette (v1.9 column layout, 41 cols):
 #   A–K   (cols  1–11): chip-list metadata + MPN/Manufacture     → dark blue + white text
-#   L–AC  (cols 12–29): distributor data + 3 business-fill cols  → light orange + black text
-#   AD+   (cols 30+ ):  ref_* technical / audit fields           → dark grey + white text
+#   L–AF  (cols 12–32): per-row distributor data, computed cols, business-fill → light orange + black text
+#   AG+   (cols 33+ ):  ref_* technical / audit fields           → dark grey + white text
 HEADER_FILL_BLUE = PatternFill(start_color="FF1F4E78", end_color="FF1F4E78", fill_type="solid")
 HEADER_FILL_ORANGE = PatternFill(start_color="FFFCE4D6", end_color="FFFCE4D6", fill_type="solid")
 HEADER_FILL_GREY = PatternFill(start_color="FF595959", end_color="FF595959", fill_type="solid")
@@ -160,7 +194,7 @@ def _header_style(col_idx: int) -> tuple[PatternFill, Font]:
     """Return (fill, font) for the header cell at the given 1-based column index."""
     if col_idx <= 11:
         return HEADER_FILL_BLUE, HEADER_FONT_WHITE
-    if col_idx <= 29:
+    if col_idx <= 32:
         return HEADER_FILL_ORANGE, HEADER_FONT_BLACK
     return HEADER_FILL_GREY, HEADER_FONT_WHITE
 
@@ -319,7 +353,11 @@ def classify_qty(api_qtys: list, scr_qtys: list) -> str:
 
 
 def build_output_row(raw: dict, chip_meta: dict, columns: list[str]) -> dict:
-    """Produce an output dict whose keys are the new column headers."""
+    """Produce an output dict whose keys are the new column headers.
+
+    Computed columns (Is_orig_manufacture, Is_cheapest, price_rank) are left as
+    None here — they're filled in by post-processing passes in main().
+    """
     mpn = normalize_mpn(raw.get("input_mpn"))
     meta = chip_meta.get(mpn, {})
     out: dict = {}
@@ -335,9 +373,159 @@ def build_output_row(raw: dict, chip_meta: dict, columns: list[str]) -> dict:
             out[col] = meta.get(key)
         elif kind == "lead_time":
             out[col] = days_to_weeks(raw.get(key))
-        else:  # blank or unknown
+        else:  # "computed", "blank", or unknown — fill later or leave None
             out[col] = None
     return out
+
+
+# ---------- v1.9 computed-column helpers -----------------------------------
+
+_MFR_WAREHOUSE_PARENS = re.compile(r"^Manufacturer warehouse\s*\((.+?)\)\s*$", re.IGNORECASE)
+
+
+def is_orig_manufacture(warehouse, manufacture) -> bool:
+    """True iff the warehouse/vender string represents the manufacturer's own
+    supply (vs a third-party distributor).
+
+    Three-step algorithm:
+      1. Special-case `"Manufacturer warehouse (X)"` — the parens content IS
+         the vendor identity; match Mfr against X (not the prefix).
+      2. Otherwise strip any trailing `" (...)"` parenthetical — typically a
+         distributor SKU like `DigiKey (497-STM32...)` that would otherwise
+         false-positive against Mfr `STM`.
+      3. On the cleaned warehouse string:
+         - Mfr length ≥ 3: substring match either direction (handles
+           "Nexperia 安世" / "Nexperia", "STMicroelectronics" / "STM").
+         - Mfr length 1-2 (TI, ON, ST, AD): token-prefix match against runs
+           of ≥2 consecutive uppercase letters in the ORIGINAL string.
+           This filters out lowercase prepositions ("on" in "Mouser (on
+           order)") while preserving real abbreviations ("ON" in
+           "ON Semiconductor", "STM" in "STMicroelectronics").
+    """
+    if not warehouse or not manufacture:
+        return False
+    wh_str = str(warehouse).strip()
+    mfr_str = str(manufacture)
+    m = _MFR_WAREHOUSE_PARENS.match(wh_str)
+    if m:
+        # Match Mfr against the parens content itself.
+        return _fuzzy_mfr_vs_wh(m.group(1), mfr_str)
+    # General case — strip any trailing distributor-SKU parenthetical.
+    wh_clean = re.sub(r"\s*\([^)]*\)\s*$", "", wh_str)
+    return _fuzzy_mfr_vs_wh(wh_clean, mfr_str)
+
+
+def _fuzzy_mfr_vs_wh(warehouse_clean: str, manufacture: str) -> bool:
+    wh_norm = re.sub(r"[^A-Z0-9]", "", warehouse_clean.upper())
+    mfr_norm = re.sub(r"[^A-Z0-9]", "", str(manufacture).upper())
+    if not wh_norm or not mfr_norm:
+        return False
+    if len(mfr_norm) >= 3:
+        return mfr_norm in wh_norm or wh_norm in mfr_norm
+    # Short Mfr: only match ≥2-uppercase tokens in the original string.
+    wh_upper_tokens = re.findall(r"[A-Z][A-Z0-9]+", warehouse_clean)
+    return any(t.startswith(mfr_norm) or mfr_norm.startswith(t) for t in wh_upper_tokens)
+
+
+def is_cny_currency(value) -> bool:
+    """True if the currency string looks like CNY (CNY / RMB / ¥)."""
+    if value is None:
+        return False
+    return str(value).strip().upper() in CNY_LIKE_CURRENCIES
+
+
+def _strip_vat(value):
+    """Divide a numeric (or numeric-string) by VAT_DIVISOR; round to 6 decimals.
+    None/empty/non-numeric → returns unchanged. Zero → returned as-is."""
+    if value is None or value == "":
+        return value
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return value
+    if num == 0:
+        return num
+    return round(num / VAT_DIVISOR, 6)
+
+
+def apply_vat_strip(out_rows: list[dict]) -> int:
+    """For CNY/RMB rows, divide the two unit-price columns by 1.13 in place.
+    Returns the count of rows touched."""
+    n = 0
+    for r in out_rows:
+        if not is_cny_currency(r.get(TRADE_CURRENCY_HEADER)):
+            continue
+        before_max = r.get(MAX_PRICE_HEADER)
+        before_min = r.get(MIN_PRICE_HEADER)
+        r[MAX_PRICE_HEADER] = _strip_vat(before_max)
+        r[MIN_PRICE_HEADER] = _strip_vat(before_min)
+        if r[MAX_PRICE_HEADER] != before_max or r[MIN_PRICE_HEADER] != before_min:
+            n += 1
+    return n
+
+
+def annotate_is_orig_manufacture(out_rows: list[dict]) -> int:
+    """Set Is_orig_manufacture per row from Warehouse/vender + Manufacture.
+    Returns True-count."""
+    n_true = 0
+    for r in out_rows:
+        flag = is_orig_manufacture(r.get("Warehouse/vender"), r.get("Manufacture"))
+        r["Is_orig_manufacture"] = flag
+        if flag:
+            n_true += 1
+    return n_true
+
+
+def compute_price_ranks(out_rows: list[dict]) -> tuple[int, int]:
+    """Group rows by Manufacture Part Number and:
+       - set Is_cheapest=True on the min-price row(s) per MPN (ties → all True)
+       - set price_rank using dense rank (1, 2, 2, 3) ascending by price
+
+    Null / 0 prices are EXCLUDED from the comparison: Is_cheapest=False,
+    price_rank=None. Operates on Unit price w/o VAT (max qty) — the
+    procurement-relevant tier.
+
+    Returns (n_cheapest_rows, n_mpns_with_ranks).
+    """
+    by_mpn: dict[str, list[dict]] = defaultdict(list)
+    for r in out_rows:
+        mpn = r.get("Manufacture Part Number")
+        if mpn:
+            by_mpn[mpn].append(r)
+
+    # Initialize defaults
+    for r in out_rows:
+        r["Is_cheapest"] = False
+        r["price_rank"] = None
+
+    n_cheapest = 0
+    n_mpns_ranked = 0
+    for mpn, rows in by_mpn.items():
+        priced = [(r, float(r[MAX_PRICE_HEADER]))
+                  for r in rows
+                  if _is_positive_number(r.get(MAX_PRICE_HEADER))]
+        if not priced:
+            continue
+        # Dense rank
+        unique_sorted_prices = sorted({p for _, p in priced})
+        price_to_rank = {p: i + 1 for i, p in enumerate(unique_sorted_prices)}
+        min_price = unique_sorted_prices[0]
+        for r, p in priced:
+            r["price_rank"] = price_to_rank[p]
+            if p == min_price:
+                r["Is_cheapest"] = True
+                n_cheapest += 1
+        n_mpns_ranked += 1
+    return n_cheapest, n_mpns_ranked
+
+
+def _is_positive_number(value) -> bool:
+    if value is None or value == "":
+        return False
+    try:
+        return float(value) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 def is_high_risk_in_stock(out_row: dict) -> bool:
@@ -401,6 +589,8 @@ def _style_workbook(ws, columns: list[str], rows: list[dict]) -> None:
     last_col = get_column_letter(len(columns))
     last_row = max(2, 1 + len(rows))
     ws.auto_filter.ref = f"A1:{last_col}{last_row}"
+    # v1.9 G — hide ref_* + the explicit set on every sheet that carries them.
+    _apply_column_hides(ws, columns)
 
 
 def _apply_row_fills(ws, columns: list[str], rows: list[dict]) -> None:
@@ -414,6 +604,133 @@ def _apply_row_fills(ws, columns: list[str], rows: list[dict]) -> None:
             continue
         for col_idx in range(1, ncols + 1):
             ws.cell(row=row_idx, column=col_idx).fill = fill
+
+
+def _apply_column_hides(ws, columns: list[str]) -> None:
+    """Mark columns hidden per v1.9 G: all ref_* + explicit set."""
+    for col_idx, col in enumerate(columns, 1):
+        if col.startswith("ref_") or col in HIDDEN_COLUMNS_EXPLICIT:
+            ws.column_dimensions[get_column_letter(col_idx)].hidden = True
+
+
+# ---------- v1.9 I — auxiliary reference sheets ----------------------------
+
+_DATA_DICT_HEADERS = ["Column", "Source", "Type", "Description"]
+# First-cut data dictionary content. User will iterate; keep entries concise
+# and aligned to the OUTPUT_COLUMNS order so the sheet reads top-to-bottom
+# matching the 全量数据 left-to-right column order.
+_DATA_DICT_ROWS: list[tuple[str, str, str, str]] = [
+    ("Category", "chip list col A", "text", "Project category (Coffee / Drink / Personal Care, etc.)"),
+    ("Project", "chip list col B", "text", "Project name within the category"),
+    ("EMS/Finish Goods", "chip list col C", "text", "EMS or finished-goods identifier"),
+    ("12NC_PCBA", "chip list col D", "text", "12-digit PCBA part number"),
+    ("Manufacture Part Number", "upstream input_mpn", "text", "MPN we searched for"),
+    ("Manufacture", "upstream expected_mfr", "text", "Expected manufacturer per chip list"),
+    ("Quantity", "chip list col G", "int", "Project-side procurement quantity (first chip-list row per MPN)"),
+    ("Currency", "chip list col H", "text", "EMS-expected buying currency (not the distributor's quote currency — see Trade Currency)"),
+    ("Current Price", "chip list col I", "number", "Current target price per the chip list"),
+    ("Type", "chip list col J", "text", "Component type / classification"),
+    ("risk", "chip list col K", "text", "Shortage risk tier — 'high' / 'low'"),
+    ("in_stock", "computed (Available Quantity > 0)", "bool", "TRUE when this warehouse row reports positive stock"),
+    ("Broker name", "upstream source", "text", "Distributor source (e.g., DIGIKEY_得捷电子, LCSC_立创商城, ARROW_艾睿)"),
+    ("Data collect method", "computed ('api' / 'scraper')", "text", "Which track produced this row"),
+    ("Warehouse/vender", "upstream warehouse", "text", "Warehouse name as reported by the source"),
+    ("Is_orig_manufacture", "computed (fuzzy match)", "bool", "TRUE when Warehouse/vender looks like the manufacturer's own warehouse (vs a third-party distributor)"),
+    ("Is_cheapest", "computed (per MPN)", "bool", "TRUE for the row(s) with the minimum Unit price w/o VAT (max qty) for this MPN. Ties → all TRUE. Null/0 prices excluded."),
+    ("price_rank", "computed (dense rank per MPN)", "int", "1..N rank by ascending Unit price w/o VAT (max qty). Ties share a rank. Null/0 → blank."),
+    ("Stock Location", "upstream ships_from", "text", "Country / region the warehouse ships from"),
+    ("Available Quantity", "upstream stockpool_qty", "int", "Units in stock at this warehouse. None = factory lead-time only; 0 = OOS"),
+    ("ship infor after order placed", "upstream ship_text", "text", "Distributor's SLA / ship-time string"),
+    ("Lead Time (Week)", "computed (upstream lead_time_days ÷ 7)", "number", "Manufacturer lead time in weeks, 1 decimal"),
+    ("MOQ", "upstream moq", "int", "Minimum order quantity"),
+    ("Maximum order qty", "upstream max_break_qty", "int", "Quantity threshold of the top price tier"),
+    ("Unit price w/o VAT (max qty)", "upstream price_at_max_qty", "number", "Unit price at the max tier. For CNY/RMB rows, divided by 1.13 to strip Chinese VAT."),
+    ("Minimum order qty", "upstream min_break_qty", "int", "Quantity threshold of the bottom price tier"),
+    ("Unit price w/o VAT (min qty)", "upstream price_at_min_qty", "number", "Unit price at the min tier, same VAT treatment as max"),
+    ("Number of price tiers", "upstream num_price_tiers", "int", "Count of price tiers reported by the source"),
+    ("Trade Currency", "upstream currency", "text", "Distributor's quoted currency (CNY / USD / EUR / RMB). Drives the VAT-strip rule."),
+    ("Date of Code", "(blank)", "text", "Filled by procurement after order — date-code on shipment"),
+    ("Reel/Cut Reel", "(blank)", "text", "Filled by procurement — packaging form"),
+    ("Certificate of Conformity(Yes/No)", "(blank)", "text", "Filled by procurement — whether a CoC was received"),
+    ("ref_Warehouse/vender ID", "upstream warehouse_idx", "int", "Internal warehouse index (QA / debug)"),
+    ("ref_returned_mpn", "upstream returned_mpn", "text", "MPN string echoed back by the source"),
+    ("ref_vendor_sku", "upstream vendor_sku", "text", "Source's internal SKU"),
+    ("ref_returned_mfr", "upstream returned_mfr", "text", "Manufacturer string echoed back by the source"),
+    ("ref_mfr_match", "upstream mfr_match", "bool", "TRUE if returned_mfr matched Manufacture (loose, source-side)"),
+    ("ref_is_mirror", "upstream is_mirror", "bool", "TRUE when this row mirrors another (Arrow / Future / Element14 quirk)"),
+    ("ref_datasheet_url", "upstream datasheet_url", "text", "Datasheet URL if available"),
+    ("ref_status", "upstream status", "text", "Raw upstream status; 'ok' for kept rows"),
+    ("ref_error", "upstream error", "text", "Upstream error string if status != ok"),
+]
+
+_SOURCE_AVAIL_HEADERS = [
+    "Source", "Scraper √", "Scraper coverage", "Scraper 可靠性",
+    "API √", "API coverage",
+]
+# v1.9 I — direct port of the TL;DR table from doc/data_sources_overview.md
+# minus the "Best use" column. 14 rows. Hardcoded — small data, low churn;
+# auto-syncing from the markdown would over-engineer.
+_SOURCE_AVAIL_ROWS: list[tuple[str, ...]] = [
+    ("DIGIKEY 得捷电子",       "√", "56 %", "较高", "√", "59 %"),
+    ("LCSC 立创商城",          "√", "79 %", "中等", "√", "70 %"),
+    ("ARROW 艾睿",              "✗", "—",    "—",   "√", "42 %"),
+    ("Element14 e络盟",         "✗", "—",    "—",   "√", "43 %"),
+    ("Mouser 贸泽",            "✗", "—",    "—",   "√", "58 %"),
+    ("买芯片网 (bom2buy.com)", "√", "60 %", "中等", "✗", "—"),
+    ("FUTURE 富昌",             "√", "51 %", "较高", "✗", "—"),
+    ("HQEW 华强电子网",        "√", "82 %", "较低", "✗", "—"),
+    ("ICKEY 云汉芯城",          "√", "80 %", "较低", "✗", "—"),
+    ("ONEYAC 唯样商城",        "√", "51 %", "中等", "✗", "—"),
+    ("Rochester",               "√", "11 %", "较低", "✗", "—"),
+    ("RSONLINE RS 欧时",       "√", "29 %", "较高", "✗", "—"),
+    ("Verical (verical.com)",   "✗", "—",    "—",   "✗", "—"),
+    ("Chip1Stop (chip1stop.com)", "✗", "—",  "—",   "✗", "—"),
+]
+
+
+def build_data_dictionary_sheet(wb) -> None:
+    ws = wb.create_sheet("Data dictionary")
+    header_align = Alignment(vertical="center", wrap_text=True)
+    body_align = Alignment(vertical="top", wrap_text=True)
+    # Header
+    for c_idx, h in enumerate(_DATA_DICT_HEADERS, 1):
+        c = ws.cell(row=1, column=c_idx, value=h)
+        c.fill = HEADER_FILL_BLUE
+        c.font = HEADER_FONT_WHITE
+        c.alignment = header_align
+    # Body
+    for r_idx, row in enumerate(_DATA_DICT_ROWS, 2):
+        for c_idx, v in enumerate(row, 1):
+            cell = ws.cell(row=r_idx, column=c_idx, value=v)
+            cell.alignment = body_align
+            cell.font = Font(name="Calibri")
+    # Widths
+    widths = [32, 32, 10, 70]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = "A2"
+
+
+def build_source_availability_sheet(wb) -> None:
+    ws = wb.create_sheet("Source Availability")
+    header_align = Alignment(vertical="center", wrap_text=True, horizontal="center")
+    center_align = Alignment(horizontal="center", vertical="center")
+    body_align = Alignment(vertical="center")
+    for c_idx, h in enumerate(_SOURCE_AVAIL_HEADERS, 1):
+        c = ws.cell(row=1, column=c_idx, value=h)
+        c.fill = HEADER_FILL_BLUE
+        c.font = HEADER_FONT_WHITE
+        c.alignment = header_align
+    for r_idx, row in enumerate(_SOURCE_AVAIL_ROWS, 2):
+        for c_idx, v in enumerate(row, 1):
+            cell = ws.cell(row=r_idx, column=c_idx, value=v)
+            cell.font = Font(name="Calibri")
+            # First column left-aligned (source name); rest centered.
+            cell.alignment = body_align if c_idx == 1 else center_align
+    widths = [30, 12, 18, 16, 10, 14]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = "A2"
 
 
 def write_csv(rows: list[dict], columns: list[str], path: Path) -> None:
@@ -526,6 +843,17 @@ def main() -> int:
     sheet2_rows = [build_output_row(r, chip_meta, OUTPUT_COLUMNS) for r in merged]
     sheet3_rows = [build_output_row(r, chip_meta, MISMATCH_COLUMNS) for r in mismatch_rows]
 
+    # v1.9 post-processing — ORDER MATTERS:
+    #   1. apply VAT-strip FIRST (computes are pre-VAT semantically: cheapest
+    #      comparison should be in stripped numbers).
+    #   2. annotate Is_orig_manufacture (row-local — order irrelevant but
+    #      grouped for clarity).
+    #   3. compute Is_cheapest / price_rank from the now-stripped prices.
+    n_vat_stripped = apply_vat_strip(sheet2_rows)
+    apply_vat_strip(sheet3_rows)  # Sheet 3 inherits VAT-strip (no return needed)
+    n_is_orig_true = annotate_is_orig_manufacture(sheet2_rows)
+    n_cheapest_rows, n_mpns_ranked = compute_price_ranks(sheet2_rows)
+
     # Unified sort across all three sheets: risk → MPN → Broker → qty desc.
     sheet2_rows.sort(key=_sort_key)
     sheet3_rows.sort(key=_sort_key)
@@ -539,11 +867,13 @@ def main() -> int:
     out_stem = f"Versuni_chip_stock_availability_check_{today}"
     xlsx_path = out_dir / f"{out_stem}.xlsx"
     wb = openpyxl.Workbook()
+
+    # Sheet order: 高风险有货 → 全量数据 → scraper参考_库存不一致 → Data dictionary → Source Availability.
+    # Sheet 1 and Sheet 3 are hidden by default (v1.9 H); Sheet 2 is the default active.
     ws1 = wb.active
     ws1.title = "高风险有货"
     _style_workbook(ws1, OUTPUT_COLUMNS, sheet1_rows)
-    # Sheet 1 is "all in-stock by definition" → no per-row green fill (would be
-    # uniformly green and uninformative).
+    # Sheet 1 = all in-stock by definition → no per-row green fill (uninformative).
 
     ws2 = wb.create_sheet("全量数据")
     _style_workbook(ws2, OUTPUT_COLUMNS, sheet2_rows)
@@ -551,6 +881,17 @@ def main() -> int:
 
     ws3 = wb.create_sheet("scraper参考_库存不一致")
     _style_workbook(ws3, MISMATCH_COLUMNS, sheet3_rows)
+
+    # v1.9 I — reference sheets.
+    build_data_dictionary_sheet(wb)
+    build_source_availability_sheet(wb)
+
+    # v1.9 H — hide Sheet 1 + Sheet 3; make Sheet 2 the default active.
+    for sn in HIDDEN_SHEETS:
+        if sn in wb.sheetnames:
+            wb[sn].sheet_state = "hidden"
+    wb.active = wb.sheetnames.index("全量数据")
+
     wb.save(xlsx_path)
 
     # Companion CSV (= sheet 2).
@@ -582,6 +923,9 @@ def main() -> int:
     print(f"  - no chip-list row               : {chips_total_merged - chips_matched}")
     print(f"Sheet 1 '高风险有货' (risk=high + qty>0) : {len(sheet1_rows)} rows, {chips_high_risk} MPNs")
     print(f"Sheet 3 '库存不一致'                  : {len(sheet3_rows)} rows")
+    print(f"v1.9 — VAT-stripped (CNY/RMB)       : {n_vat_stripped} rows")
+    print(f"v1.9 — Is_orig_manufacture=True     : {n_is_orig_true} / {len(sheet2_rows)} rows")
+    print(f"v1.9 — Is_cheapest=True             : {n_cheapest_rows} rows over {n_mpns_ranked} MPNs with priced rows")
     print()
     print(f"Written:")
     print(f"  {xlsx_path}")
