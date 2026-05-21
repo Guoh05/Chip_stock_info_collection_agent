@@ -439,6 +439,15 @@ def main() -> int:
                     help="Output dir (default: <env_root>/merged/Merge_<api_ts>__<scr_ts>/)")
     ap.add_argument("--chip-list", type=Path, default=CHIP_LIST_PATH,
                     help=f"Chip metadata xlsx (default: {CHIP_LIST_PATH})")
+    side_group = ap.add_mutually_exclusive_group()
+    side_group.add_argument("--api-only", action="store_true",
+                            help="Use API batch only; treat scraper side as empty. "
+                                 "Cross-validation (Sheet 3) will be empty. "
+                                 "Output folder is named Merge_<api_ts>__none/.")
+    side_group.add_argument("--scraper-only", action="store_true",
+                            help="Use scraper batch only; treat API side as empty. "
+                                 "Cross-validation (Sheet 3) will be empty. "
+                                 "Output folder is named Merge_none__<scr_ts>/.")
     args = ap.parse_args()
 
     env_root = ENV_ROOTS[args.env]
@@ -446,24 +455,30 @@ def main() -> int:
     scr_root = env_root / "scraper"
     merged_root = env_root / "merged"
 
-    api_dir = args.api or latest_batch(api_root)
-    scr_dir = args.scr or latest_batch(scr_root)
-    api_csv = api_dir / "batch_index.csv"
-    scr_csv = scr_dir / "batch_index.csv"
-    if not api_csv.exists():
+    # Resolve which sides we read. --api-only / --scraper-only switches off
+    # the missing side entirely so the orchestrator can complete a merge with
+    # whatever's available after a partial-pipeline failure.
+    use_api = not args.scraper_only
+    use_scraper = not args.api_only
+
+    api_dir = (args.api or latest_batch(api_root)) if use_api else None
+    scr_dir = (args.scr or latest_batch(scr_root)) if use_scraper else None
+    api_csv = (api_dir / "batch_index.csv") if api_dir else None
+    scr_csv = (scr_dir / "batch_index.csv") if scr_dir else None
+    if api_csv is not None and not api_csv.exists():
         raise SystemExit(f"missing {api_csv}")
-    if not scr_csv.exists():
+    if scr_csv is not None and not scr_csv.exists():
         raise SystemExit(f"missing {scr_csv}")
 
     chip_meta = load_chip_meta(args.chip_list)
 
-    api_ts = re.sub(r"^BatchTest_", "", api_dir.name)
-    scr_ts = re.sub(r"^BatchTest_", "", scr_dir.name)
+    api_ts = re.sub(r"^BatchTest_", "", api_dir.name) if api_dir else "none"
+    scr_ts = re.sub(r"^BatchTest_", "", scr_dir.name) if scr_dir else "none"
     out_dir = args.out or (merged_root / f"Merge_{api_ts}__{scr_ts}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    api_rows_raw = read_ok_rows(api_csv)
-    scr_rows_raw = read_ok_rows(scr_csv)
+    api_rows_raw = read_ok_rows(api_csv) if api_csv else []
+    scr_rows_raw = read_ok_rows(scr_csv) if scr_csv else []
 
     # MPN-match filter: drop rows where the channel returned a different MPN
     # than what we searched for (punctuation-insensitive comparison).
@@ -552,8 +567,14 @@ def main() -> int:
     chips_matched = sum(1 for m in {r.get("Manufacture Part Number") for r in sheet2_rows}
                         if m and normalize_mpn(m) in chip_meta)
     print(f"Chip list (Part List Modify)        : {len(chip_meta)} unique MPNs")
-    print(f"API rows (status=ok, !HQEW)         : {n_api_ok}  (dropped {n_api_dropped_mpn} for returned_mpn mismatch)")
-    print(f"Scraper rows (status=ok, !HQEW)    : {n_scr_ok_total}  (dropped {n_scr_dropped_mpn} for returned_mpn mismatch)")
+    if args.scraper_only:
+        print(f"API rows                            : SKIPPED (--scraper-only)")
+    else:
+        print(f"API rows (status=ok, !HQEW)         : {n_api_ok}  (dropped {n_api_dropped_mpn} for returned_mpn mismatch)")
+    if args.api_only:
+        print(f"Scraper rows                        : SKIPPED (--api-only)")
+    else:
+        print(f"Scraper rows (status=ok, !HQEW)    : {n_scr_ok_total}  (dropped {n_scr_dropped_mpn} for returned_mpn mismatch)")
     print(f"  - kept (API has no coverage)     : {n_scr_kept}")
     print(f"  - suppressed (API took over)     : {n_scr_suppressed}")
     print(f"Merged total (Sheet 2 '全量数据')     : {len(sheet2_rows)} ({chips_total_merged} MPNs)")

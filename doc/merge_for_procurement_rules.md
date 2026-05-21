@@ -142,10 +142,21 @@ python common/merge_batch_for_procurement.py \
     [--api  <api_BatchTest_dir>] \
     [--scr  <scraper_BatchTest_dir>] \
     [--out  <output_dir>] \
-    [--chip-list <xlsx_path>]
+    [--chip-list <xlsx_path>] \
+    [--api-only | --scraper-only]
 ```
 
 Run with no args = newest batches in each track under `test/` + default chip list. `--env prod` switches both the input batch roots (`production/api/`, `production/scraper/`) and the output root (`production/merged/`). Use explicit `--api` / `--scr` / `--out` to mix environments (rarely needed).
+
+### Partial-merge modes
+
+`--api-only` and `--scraper-only` are mutually exclusive. They let the pipeline produce a procurement xlsx when only one track has data (e.g., the orchestrator's scraper phase failed and the user chose to continue with API data only).
+
+- `--api-only`: skip reading the scraper CSV; `scr_rows = []`; merge output contains API rows only. Output folder is `Merge_<api_ts>__none/`.
+- `--scraper-only`: skip reading the API CSV; `api_rows = []`; merge output contains scraper rows only. Output folder is `Merge_none__<scr_ts>/`.
+- Cross-validation (Sheet 3) requires both sides; under either partial flag Sheet 3 will be empty.
+- All other merge rules (HQEW drop, returned_mpn match, mfr_match flag, chip-list enrichment, sort order, headers) apply unchanged to the present side.
+- The `Versuni_chip_stock_availability_check_<YYYYMMDD>.xlsx` filename is unchanged in partial modes; the folder name (`Merge_<api_ts>__none/` or `Merge_none__<scr_ts>/`) is what signals the partial nature.
 
 ## Out of scope (v1)
 
