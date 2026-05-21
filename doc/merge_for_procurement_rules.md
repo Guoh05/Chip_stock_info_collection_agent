@@ -92,11 +92,11 @@ This is why the columns are named `Unit price w/o VAT (...)` — for CNY rows th
 
 | Sheet name | Visibility | Filter | Highlight |
 |---|---|---|---|
-| `高风险有货` | **hidden** | `risk == "high"` AND `Available Quantity > 0` | **None** — every row is in-stock by definition |
-| `全量数据` | **visible, default** | All merged rows (post-filter) | Green (`FFC6EFCE`) if `in_stock`; light grey (`FFEEEEEE`) if `Available Quantity == 0`; no fill for `None`-qty (factory lead) |
-| `scraper参考_库存不一致` | **hidden** | Mismatched scraper rows only (see above) | None |
-| `Data dictionary` | visible | One row per `全量数据` column with source + type + description | None |
-| `Source Availability` | visible | Port of the TL;DR table in `doc/data_sources_overview.md` (sans `Best use`) | None |
+| `High_risk_positive_stock` | **hidden** | `risk == "high"` AND `Available Quantity > 0` | **None** — every row is in-stock by definition |
+| `All_data` | **visible, default** | All merged rows (post-filter) | Green (`FFC6EFCE`) if `in_stock`; light grey (`FFEEEEEE`) if `Available Quantity == 0`; no fill for `None`-qty (factory lead) |
+| `ref_scraper_api_diff` | **hidden** | Mismatched scraper rows only (see above) | None |
+| `Data dictionary` | visible | One row per `All_data` column: `Column` + `Type` + `Description` (descriptions sourced from `ref/merged_output_fields_mapping_v3_20260520.xlsx`) | None |
+| `Source Availability` | visible | Port of the TL;DR table in `doc/data_sources_overview.md` (sans `Best use`). `Scraper 可靠性` column is hidden by default. | None |
 
 `Data dictionary` and `Source Availability` are reference sheets — content is hardcoded in the merge script (low churn, small data; auto-sync would over-engineer).
 
