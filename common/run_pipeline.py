@@ -302,6 +302,64 @@ def print_final_summary(state: dict) -> None:
         print(f"  {phase:<14} {st}{extra}")
 
 
+# v1.12 — Bug 2 fix. Resume Option A: input-scope args are locked to the state.
+def _apply_resume_locked_args(args: argparse.Namespace, state: dict) -> None:
+    """On --resume, overwrite the input-scope args on `args` with the values
+    saved in `state["cli_args"]` from the original run. These flags drive
+    *which chips get processed*; they must stay consistent across the
+    multi-phase pipeline. The per-resume decision flags (--skip-*) and the
+    advanced --*-args passthroughs are NOT locked — they can change per
+    resume invocation.
+
+    If the user passes one of the locked flags on the resume command line
+    and the value differs from state, print a [resume] note so the override
+    is visible — the state value still wins."""
+    cli = state.get("cli_args") or {}
+
+    def _maybe_warn(field_name: str, current, saved):
+        if current is None and saved is None:
+            return
+        if current is None:
+            return  # user omitted on resume — silent; state value applies
+        if str(current) == str(saved):
+            return  # user re-passed the same value — silent; state value applies
+        print(f"[resume] note: --{field_name.replace('_', '-')}={current!r} "
+              f"on resume command line; using original value {saved!r} from state instead.")
+
+    saved_xlsx = cli.get("xlsx")
+    _maybe_warn("xlsx", str(args.xlsx) if args.xlsx else None, saved_xlsx)
+    args.xlsx = Path(saved_xlsx) if saved_xlsx else None
+
+    saved_limit = cli.get("limit")
+    _maybe_warn("limit", args.limit, saved_limit)
+    args.limit = saved_limit
+
+    saved_mpns = cli.get("mpns")
+    _maybe_warn("mpns", args.mpns, saved_mpns)
+    args.mpns = saved_mpns
+
+    saved_mpns_file = cli.get("mpns_file")
+    _maybe_warn("mpns_file", args.mpns_file, saved_mpns_file)
+    args.mpns_file = saved_mpns_file
+
+    # `with_bom2buy` was saved as `not args.skip_bom2buy` in init_state.
+    # If the original opted out of bom2buy, force-skip it on every resume
+    # (you can't un-skip a phase that was never meant to run; start fresh
+    # to change that). If the original DID want bom2buy, leave args
+    # alone — the user can still pass --skip-bom2buy on resume as a
+    # per-resume decision (e.g., captcha couldn't be solved this time).
+    if cli.get("with_bom2buy") is False:
+        if not args.skip_bom2buy:
+            print(f"[resume] note: original run had --skip-bom2buy; "
+                  f"preserving (passing --skip-bom2buy this turn would be a no-op).")
+        args.skip_bom2buy = True
+
+    xlsx_disp = str(args.xlsx) if args.xlsx else None
+    print(f"[resume] locked input-scope from state: "
+          f"mpns={args.mpns!r}  limit={args.limit}  "
+          f"xlsx={xlsx_disp}  skip_bom2buy={args.skip_bom2buy}")
+
+
 # ---------- main ------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
@@ -332,6 +390,13 @@ def main(argv: list[str] | None = None) -> int:
         else:
             state = existing
             print(f"[resume] state from {state['started_at']} (env={state['env']})")
+            # Resume Option A — input-scope args are LOCKED to the state's
+            # original cli_args. Phase runners read args.mpns / args.limit /
+            # etc. directly, so we overwrite those on args here before the
+            # phase loop. The --skip-* decision flags and --*-args advanced
+            # passthrough are NOT in state.cli_args and remain freely
+            # overridable per resume (they're per-resume decisions).
+            _apply_resume_locked_args(args, state)
     else:
         if existing is not None:
             non_final = [p for p, ph in existing["phases"].items()
