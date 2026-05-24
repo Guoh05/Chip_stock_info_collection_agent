@@ -8,7 +8,7 @@ For the high-level status and pass-rate report, see `scraper_report_v3.md`. For 
 
 ## Current status snapshot (2026-05-24)
 
-**Latest batch:** `test/scraper/BatchTest_20260524_22_27_16/` — 27 MPNs × 8 sources = 216 cells.
+**Latest batch:** `test/scraper/BatchTest_20260524_22_27_16/` — 27 MPNs × 9 sources = 243 cells.
 
 ### Working sources
 
@@ -22,7 +22,7 @@ For the high-level status and pass-rate report, see `scraper_report_v3.md`. For 
 | **ONEYAC_唯样商城** | `scrape_oneyac.py` | 15 | 12 | 0 | 0 | 55.6 % |
 | **ICKEY_云汉芯城** | `scrape_ickey.py` | 16 | 11 | 0 | 0 | 59.3 % |
 | **ROCHESTER_Rochester_Electronics** | `scrape_rochester.py` | 2 | 25 | 0 | 0 | 7.4 % |
-| **BOM2BUY_买芯片网** | `scrape_bom2buy.py` | 0 | 0 | 0 | 0 | 0.0 % |
+| **BOM2BUY_买芯片网** | `scrape_bom2buy.py` | 12 | 15 | 0 | 0 | 44.4 % |
 
 ### Blocked sources
 

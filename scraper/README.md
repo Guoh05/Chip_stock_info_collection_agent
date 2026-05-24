@@ -20,7 +20,7 @@ Track 1 of the chip-availability pipeline. Drives distributor websites with `cur
 | Mouser (贸泽, mouser.cn / .com) | Blocked by Akamai BotManager `bm-verify` — use api/scripts/api_mouser.py instead | ❌ |
 | Arrow (艾睿, arrow.com) | Blocked by Akamai BotManager `_abck` — use api/scripts/api_arrow.py (key pending) | ❌ |
 
-**Latest batch run:** `test/scraper/BatchTest_20260524_22_27_16/` — 27 MPNs × 8 source(s) = 216 cells.
+**Latest batch run:** `test/scraper/BatchTest_20260524_22_27_16/` — 27 MPNs × 9 source(s) = 243 cells.
 
 | Channel | OK | No results | Blocked | Failed | OK % |
 |---|---|---|---|---|---|
@@ -32,10 +32,11 @@ Track 1 of the chip-availability pipeline. Drives distributor websites with `cur
 | Oneyac | 15 | 12 | 0 | 0 | 55.6 % |
 | ICKEY | 16 | 11 | 0 | 0 | 59.3 % |
 | Rochester | 2 | 25 | 0 | 0 | 7.4 % |
+| Bom2buy | 12 | 15 | 0 | 0 | 44.4 % |
 
-Cross-source coverage: 2 on 7; 8 on 6; 3 on 5; 1 on 4; 1 on 3; 5 on 2; 7 on 1.
+Cross-source coverage: 1 on 8; 8 on 7; 4 on 6; 1 on 4; 1 on 3; 6 on 2; 6 on 1.
 
-**Manufacturer-name mismatches surfaced:** 19 — `HC89F3541B` (LCSC: 芯圣 → holychip(芯圣电子)), `HC89F3541B` (HQEW: 芯圣 → HOLYCHIP), `MP1470GJ-Z` (LCSC: MPS → TECH PUBLIC(台舟)), `MP1470GJ-Z` (DIGIKEY: MPS → Monolithic Power Systems Inc.), `MP1470GJ-Z` (ONEYAC: MPS → TECH PUBLIC), and 14 more.
+**Manufacturer-name mismatches surfaced:** 22 — `HC89F3541B` (LCSC: 芯圣 → holychip(芯圣电子)), `HC89F3541B` (HQEW: 芯圣 → HOLYCHIP), `MP1470GJ-Z` (LCSC: MPS → TECH PUBLIC(台舟)), `MP1470GJ-Z` (DIGIKEY: MPS → Monolithic Power Systems Inc.), `MP1470GJ-Z` (ONEYAC: MPS → TECH PUBLIC), and 17 more.
 
 <!-- END AUTO:status -->
 
