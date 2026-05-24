@@ -20,9 +20,9 @@ Per-channel timeouts (seconds, observed-budget × 1.4 safety):
     bom2buy     post-step, in-script subprocess (1 h hard cap)
 
 Master input (2026-05-20+):
-    ref/Shortage Emergency Response List_v2.xlsx, sheet `Part List Modify`,
+    ref/Raw_chip_list_20260520.xlsx, sheet `Part List Modify`,
     column `Manufacture Part Number`. Mfr column `Manufacture` is reference
-    only. MPNs are deduped (107 unique from 280 raw rows in v2).
+    only. MPNs are deduped (107 unique from 280 raw rows).
     Legacy `Chip_DataSource_Master.xlsx` (header on row 4) is still supported
     if explicitly passed via --xlsx — `load_chip_list` detects and falls back.
 
@@ -77,7 +77,7 @@ ENV_ROOTS = {
     "test": PROJECT_ROOT / "test",
     "prod": PROJECT_ROOT / "production",
 }
-DEFAULT_XLSX = PROJECT_ROOT / "ref" / "Shortage Emergency Response List_v2.xlsx"
+DEFAULT_XLSX = PROJECT_ROOT / "ref" / "Raw_chip_list_20260520.xlsx"
 DEFAULT_SHEET = "Part List Modify"
 DEFAULT_MPN_COL = "Manufacture Part Number"
 DEFAULT_MFR_COL = "Manufacture"
@@ -167,7 +167,7 @@ def load_chip_list(
 ) -> tuple[list[dict], list[dict]]:
     """Read chip list from a header-row-1 sheet, dedup by MPN.
 
-    The 2026-05-20+ master is `ref/Shortage Emergency Response List_v2.xlsx`,
+    The 2026-05-20+ master is `ref/Raw_chip_list_20260520.xlsx`,
     sheet `Part List Modify` — header on row 1, data from row 2. MPN col is
     `Manufacture Part Number`, mfr col is `Manufacture`. The mfr value is
     reference-only (we keep the first occurrence's mfr after dedup).

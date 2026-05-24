@@ -12,7 +12,7 @@ first-party APIs (`api/`), or both.
 - `test/` — Dev / exploratory output. Split into `scraper/`, `api/`, `merged/`, `comparison/`.
 - `production/` — Production output. Mirrors `test/`: `scraper/`, `api/`, `merged/`. Drivers + the merge script accept `--env {test,prod}` (default `test`).
 - `ref/` — Source-of-truth inputs (chip list xlsx, datasheets).
-  - **Master chip list (2026-05-20+): `ref/Shortage Emergency Response List_v2.xlsx`**, sheet `Part List Modify`, column `Manufacture Part Number` (107 unique MPNs after dedup from 280 raw rows). The `Manufacture` column is reference only.
+  - **Master chip list (2026-05-20+): `ref/Raw_chip_list_20260520.xlsx`**, sheet `Part List Modify`, column `Manufacture Part Number` (107 unique MPNs after dedup from 280 raw rows). The `Manufacture` column is reference only. (Renamed from `Shortage Emergency Response List_v2.xlsx` on 2026-05-22 for a uniform `Raw_chip_list_<YYYYMMDD>.xlsx` convention.)
   - Legacy `Chip_DataSource_Master.xlsx` (header row 4, MPN col 1, mfr col 2) still supported via the `load_chip_list` backward-compat path if explicitly passed via `--xlsx`.
 - `.venv/` — Shared Python 3.10.9 venv. `.claude/` — settings, hooks, skills.
 
@@ -62,6 +62,18 @@ Read it before doing track-specific work.
    flags edits to the listed files; the semantic judgment (does the
    orchestrator actually need a change?) is yours. Always run the smoke
    test from `run_pipeline_workflow.md` after pipeline-component edits.
+8. **Review every new chip-list input before running the pipeline.**
+   Applies to both `--env test` and `--env prod`, even under auto mode,
+   even for `--limit 1` smoke tests. Don't blindly reuse a prior batch's
+   cleaner script (its `MANUAL_OVERRIDES` are batch-specific literals;
+   regex may miss new dirty patterns or false-positive on clean MPNs —
+   treat any saved cleaner as a template, not a default). Always produce
+   a cleaned chip-list xlsx that **preserves the raw `Manufacture Part
+   Number` column** AND adds a new `MPN_cleaned` column; the merge
+   output must then carry both raw `Manufacture Part Number` + cleaned
+   `MPN_cleaned_byAgent` columns for traceability. See memory
+   `feedback_input_review.md` for the full checklist (anomaly types,
+   cleaning categories, what to ask the user, output column contract).
 
 ## Working scope
 

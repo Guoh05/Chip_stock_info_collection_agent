@@ -6,23 +6,23 @@ For the high-level status and pass-rate report, see `scraper_report_v3.md`. For 
 
 <!-- BEGIN AUTO:source_status — managed by scraper/scripts/_update_readme_status.py. Hand edits between these markers will be overwritten on the next batch run. -->
 
-## Current status snapshot (2026-05-21)
+## Current status snapshot (2026-05-24)
 
-**Latest batch:** `test/scraper/BatchTest_20260520_07_40_03/` — 107 MPNs × 9 sources = 963 cells.
+**Latest batch:** `test/scraper/BatchTest_20260524_22_27_16/` — 27 MPNs × 8 sources = 216 cells.
 
 ### Working sources
 
 | Source | Script | OK | No results | Blocked | Failed | OK % |
 |---|---|---|---|---|---|---|
-| **LCSC_立创商城** | `scrape_lcsc_v3.py` | 84 | 23 | 0 | 0 | 78.5 % |
-| **DIGIKEY_得捷电子** | `scrape_digikey.py` | 60 | 0 | 3 | 44 | 56.1 % |
-| **HQEW_华强电子网** | `scrape_hqew.py` | 88 | 19 | 0 | 0 | 82.2 % |
-| **FUTURE_Future_Electronics** | `scrape_future.py` | 55 | 52 | 0 | 0 | 51.4 % |
-| **RSONLINE_RS欧时** | `scrape_rsonline.py` | 31 | 76 | 0 | 0 | 29.0 % |
-| **ONEYAC_唯样商城** | `scrape_oneyac.py` | 54 | 53 | 0 | 0 | 50.5 % |
-| **ICKEY_云汉芯城** | `scrape_ickey.py` | 86 | 21 | 0 | 0 | 80.4 % |
-| **ROCHESTER_Rochester_Electronics** | `scrape_rochester.py` | 12 | 95 | 0 | 0 | 11.2 % |
-| **BOM2BUY_买芯片网** | `scrape_bom2buy.py` | 64 | 43 | 0 | 0 | 59.8 % |
+| **LCSC_立创商城** | `scrape_lcsc_v3.py` | 18 | 9 | 0 | 0 | 66.7 % |
+| **DIGIKEY_得捷电子** | `scrape_digikey.py` | 13 | 0 | 0 | 14 | 48.1 % |
+| **HQEW_华强电子网** | `scrape_hqew.py` | 25 | 2 | 0 | 0 | 92.6 % |
+| **FUTURE_Future_Electronics** | `scrape_future.py` | 12 | 15 | 0 | 0 | 44.4 % |
+| **RSONLINE_RS欧时** | `scrape_rsonline.py` | 0 | 27 | 0 | 0 | 0.0 % |
+| **ONEYAC_唯样商城** | `scrape_oneyac.py` | 15 | 12 | 0 | 0 | 55.6 % |
+| **ICKEY_云汉芯城** | `scrape_ickey.py` | 16 | 11 | 0 | 0 | 59.3 % |
+| **ROCHESTER_Rochester_Electronics** | `scrape_rochester.py` | 2 | 25 | 0 | 0 | 7.4 % |
+| **BOM2BUY_买芯片网** | `scrape_bom2buy.py` | 0 | 0 | 0 | 0 | 0.0 % |
 
 ### Blocked sources
 

@@ -14,7 +14,7 @@ sheet 1.
 
 - API CSV: `<env_root>/api/BatchTest_<ts>/batch_index.csv`
 - Scraper CSV: `<env_root>/scraper/BatchTest_<ts>/batch_index.csv`
-- Chip metadata: `ref/Shortage Emergency Response List_v2.xlsx` (sheet `Part List Modify`)
+- Chip metadata: `ref/Raw_chip_list_20260520.xlsx` (sheet `Part List Modify`)
 
 Schemas: `api/doc/batch_output_schema.md`, `scraper/doc/batch_output_schema.md`. Both CSVs share 24 columns; scraper adds `elapsed_sec`, `num_variants` (dropped on merge).
 
@@ -32,7 +32,7 @@ Default: script auto-picks the newest standard `BatchTest_<YYYYMMDD>_<HH>_<MM>_<
    - Arrow: `warehouse` contains `" — mirror"`.
    - Future scraper: `warehouse_idx > 1` AND warehouse contains `(global)`.
    - Element14 site-level: `warehouse` matches `Element14 (…)` shape.
-7. **Chip-list enrichment.** Every output row is joined to the chip list on a normalized MPN key (`str.strip().replace("\xa0", "")`). The chip list has duplicates (one chip across multiple PCBAs); **only the first matching row** is used per MPN. Both A–D (Category / Project / EMS / 12NC_PCBA) and G–K (Quantity / Currency / Current Price / Type / risk) come from that first row.
+7. **Chip-list enrichment.** Every output row is joined to the chip list on a normalized MPN key (`str.strip().replace("\xa0", "")`). The chip list has duplicates (one chip across multiple PCBAs); **only the first matching row** is used per MPN. Both A–D (Category / Project / EMS / 12NC_PCBA) and G–K (Quantity / Currency / Current Price / Type / risk) come from that first row. **The join key (v1.10+) is the chip list's `MPN_cleaned` column when present** (an agent-produced column matching the cleaned MPN actually sent to sources, per CLAUDE.md Hard Rule #8); **falls back to `Manufacture Part Number`** for legacy chip lists without the cleaned column.
 8. **Lead time conversion.** Upstream `lead_time_days` (integer days) is converted to **`Lead Time (Week)` with 1 decimal** (`round(days / 7, 1)`).
 
 ## In-stock & "high-risk in-stock"
@@ -103,10 +103,21 @@ This is why the columns are named `Unit price w/o VAT (...)` — for CNY rows th
 **Unified sort across the three data sheets**: `risk` (`high` → `low` → other → null) → `Manufacture Part Number` (asc) → `Broker name` (asc) → `Available Quantity` (desc). Encoded by `_sort_key()` in the merge script.
 
 Shared styling:
-- Header row: bold + `wrap_text`, colored by **column range** (v1.9 layout):
-  - **A–K** (cols 1–11, chip-list metadata + MPN/Manufacture): dark blue `#1F4E78` background + white font.
-  - **L–AF** (cols 12–32, in_stock + distributor data + computed cols + 3 business-fill cols): light orange `#FCE4D6` background + black font.
-  - **AG onwards** (cols 33+, `ref_*` audit fields): dark grey `#595959` background + white font.
+- Header row: bold + `wrap_text`, colored by **column range** (v1.10 layout, 42 cols):
+  - **A–L** (cols 1–12, chip-list metadata + raw MPN + cleaned MPN + Manufacture..risk): dark blue `#1F4E78` background + white font.
+  - **M–AG** (cols 13–33, in_stock + distributor data + computed cols + 3 business-fill cols): light orange `#FCE4D6` background + black font.
+  - **AH onwards** (cols 34+, `ref_*` audit fields): dark grey `#595959` background + white font.
+- **v1.11 header highlight (overrides the zone palette above by column NAME)**: the following 8 procurement-key columns get **dark red `#C00000` + white font** — these are the columns procurement uses most when scanning the workbook:
+  - `in_stock`
+  - `Broker name`
+  - `Warehouse/vender`
+  - `Is_orig_manufacture`
+  - `Is_cheapest`
+  - `Available Quantity`
+  - `ship infor after order placed`
+  - `Unit price w/o VAT (max qty)`
+
+  Encoded in `HIGHLIGHT_HEADER_COLUMNS` (set, by column NAME so it survives reorderings). Applies to all 3 data sheets that carry those columns (Sheet 3 only matches 5 of the 8).
 - Freeze panes at A2.
 - AutoFilter dropdowns on the full data range (`A1:<last_col><last_row>`) — procurement can filter in Excel.
 - Column widths: hardcoded in `COLUMN_WIDTHS`; columns not listed fall back to auto-fit (capped 10–50 chars).
@@ -121,13 +132,14 @@ Default-hidden by `_apply_column_hides()` — can be unhidden manually in Excel:
 - `Number of price tiers`
 - `price_rank`
 
-That's **13 hidden** out of 41 total in Sheet 2 → **28 visible** by default.
+That's **13 hidden** out of 42 total in Sheet 2 → **29 visible** by default.
 
-### Column list (Sheet 1 & Sheet 2 — 41 cols, in order)
+### Column list (Sheet 1 & Sheet 2 — 42 cols, in order)
 
 ```
 Category, Project, EMS/Finish Goods, 12NC_PCBA,
-Manufacture Part Number, Manufacture,
+Manufacture Part Number, MPN_cleaned_byAgent,          ← v1.10: raw chip-list MPN preserved + agent-cleaned MPN as new traceability col (visible by default)
+Manufacture,
 Quantity, Currency, Current Price, Type, risk,
 in_stock,                                              ← v1.9 A (moved right after risk)
 Broker name, Data collect method,
@@ -145,6 +157,14 @@ ref_returned_mfr, ref_mfr_match, ref_is_mirror, ref_datasheet_url,
 ref_status, ref_error                                  ← all 9 ref_* hidden by default
 ```
 
+**v1.10 — MPN dual-column convention** (固化于此，每次 merge 必须遵守):
+
+- `Manufacture Part Number` shows the **raw MPN** as it appears in the chip list (preserves package suffix, parens, Chinese descriptors, etc.). For rows without a chip-list match, falls back to the agent-cleaned MPN (so the cell is never blank).
+- `MPN_cleaned_byAgent` shows the **agent-cleaned MPN** actually sent to API/Scraper sources and used as the chip-list join key. Always equal to upstream `input_mpn`.
+- The two columns let procurement see at a glance: "list says X, agent searched Y, got Y's data."
+- All per-MPN aggregations (sort, group-by for `Is_cheapest`/`price_rank`, summary counts) use `MPN_cleaned_byAgent` — the raw col is for display only.
+- Chip-list join uses the chip list's `MPN_cleaned` column when present; falls back to `Manufacture Part Number` for legacy chip lists.
+
 Header → source mapping is defined by `COLUMN_SOURCE_MAP` in the script. Each entry is one of:
 
 - `("merge", <csv_field>)` — copy from upstream CSV row (rename only).
@@ -155,11 +175,11 @@ Header → source mapping is defined by `COLUMN_SOURCE_MAP` in the script. Each 
 
 Three "blank" columns (`Date of Code`, `Reel/Cut Reel`, `Certificate of Conformity(Yes/No)`) are written empty for procurement to fill.
 
-### Sheet 3 columns (23 cols, in order)
+### Sheet 3 columns (24 cols, in order)
 
 ```
 Category, Project, EMS/Finish Goods, 12NC_PCBA,
-Manufacture Part Number, Manufacture,
+Manufacture Part Number, MPN_cleaned_byAgent, Manufacture,    ← v1.10: dual-MPN convention applies to Sheet 3 too
 Quantity, Currency, Current Price, Type, risk,
 Broker name, in_stock,
 ref_returned_mpn, Warehouse/vender, Available Quantity,

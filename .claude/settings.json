@@ -31,6 +31,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".venv/Scripts/python.exe .claude/hooks/check_scraper_doc_sync.py",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }

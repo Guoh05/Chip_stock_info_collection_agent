@@ -12,10 +12,15 @@ Rules:
    reference sheet (Sheet 3) for QA.
 7. Output columns are renamed / reordered per
    ref/merged_output_fields_mapping.xlsx and enriched with project metadata
-   from ref/Shortage Emergency Response List_v2.xlsx (sheet "Part List
+   from ref/Raw_chip_list_20260520.xlsx (sheet "Part List
    Modify"). Lead time converted from days to weeks (1 decimal).
 8. Sheet 1 ("High_risk_positive_stock") = procurement priority view:
    risk == "high" AND Available Quantity > 0.
+9. v1.10 — `Manufacture Part Number` column now shows the RAW MPN from the
+   chip list; new `MPN_cleaned_byAgent` column shows the agent-cleaned MPN
+   actually sent to sources. Chip-list join uses `MPN_cleaned` column when
+   present, falling back to `Manufacture Part Number` for legacy chip lists.
+   See CLAUDE.md Hard Rule #8 + memory `feedback_input_review.md`.
 
 Output: <env_root>/merged/Merge_<api_ts>__<scr_ts>/
         Versuni_chip_stock_availability_check_<YYYYMMDD>.xlsx
@@ -45,14 +50,19 @@ ENV_ROOTS = {
     "test": PROJECT_ROOT / "test",
     "prod": PROJECT_ROOT / "production",
 }
-CHIP_LIST_PATH = PROJECT_ROOT / "ref" / "Shortage Emergency Response List_v2.xlsx"
+CHIP_LIST_PATH = PROJECT_ROOT / "ref" / "Raw_chip_list_20260520.xlsx"
 CHIP_LIST_SHEET = "Part List Modify"
 
 DROP_SOURCE_PREFIXES = ("HQEW_",)
 
 # Chip-list headers we copy into the merged output (first-row per MPN).
+# v1.10 — `Manufacture Part Number` is included here so the output can
+# display the raw (un-cleaned) MPN from the chip list alongside the cleaned
+# `MPN_cleaned_byAgent` column. See CLAUDE.md Hard Rule #8 for the cleaning
+# convention and load_chip_meta() for the dual-key lookup behavior.
 CHIP_FIELDS = [
     "Category", "Project", "EMS/Finish Goods", "12NC_PCBA",
+    "Manufacture Part Number",
     "Quantity", "Currency", "Current Price", "Type", "risk",
 ]
 
@@ -69,7 +79,8 @@ COLUMN_SOURCE_MAP: dict[str, tuple[str, str | None]] = {
     "Project":                               ("chip", "Project"),
     "EMS/Finish Goods":                      ("chip", "EMS/Finish Goods"),
     "12NC_PCBA":                             ("chip", "12NC_PCBA"),
-    "Manufacture Part Number":               ("merge", "input_mpn"),
+    "Manufacture Part Number":               ("chip", "Manufacture Part Number"),  # v1.10: raw MPN from chip list (was input_mpn); fallback to input_mpn when no chip-list match
+    "MPN_cleaned_byAgent":                   ("merge", "input_mpn"),                # v1.10: agent-cleaned MPN actually sent to sources — traceability column per CLAUDE.md Hard Rule #8
     "Manufacture":                           ("merge", "expected_mfr"),
     "Quantity":                              ("chip", "Quantity"),
     "Currency":                              ("chip", "Currency"),
@@ -116,7 +127,7 @@ OUTPUT_COLUMNS = list(COLUMN_SOURCE_MAP.keys())   # 41 columns, in output order
 # on the QA-only mismatched subset.
 MISMATCH_COLUMNS = [
     "Category", "Project", "EMS/Finish Goods", "12NC_PCBA",
-    "Manufacture Part Number", "Manufacture",
+    "Manufacture Part Number", "MPN_cleaned_byAgent", "Manufacture",
     "Quantity", "Currency", "Current Price", "Type", "risk",
     "Broker name", "in_stock",
     "ref_returned_mpn", "Warehouse/vender", "Available Quantity",
@@ -152,7 +163,7 @@ HIDDEN_SHEETS = {"High_risk_positive_stock", "ref_scraper_api_diff"}
 # to procurement's preferred layout. Columns not listed fall back to auto-fit.
 COLUMN_WIDTHS: dict[str, float] = {
     "Category": 12.0, "Project": 11.0, "EMS/Finish Goods": 18.0, "12NC_PCBA": 27.0,
-    "Manufacture Part Number": 25.0, "Manufacture": 13.0,
+    "Manufacture Part Number": 25.0, "MPN_cleaned_byAgent": 22.0, "Manufacture": 13.0,
     "Quantity": 10.0, "Currency": 13.0, "Current Price": 15.0, "Type": 10.0, "risk": 13.0,
     "in_stock": 10.0,
     "Broker name": 33.0, "Data collect method": 21.0,
@@ -179,22 +190,44 @@ RISK_RANK = {"high": 0, "low": 1}
 GREEN = PatternFill(start_color="FFC6EFCE", end_color="FFC6EFCE", fill_type="solid")
 GREY = PatternFill(start_color="FFEEEEEE", end_color="FFEEEEEE", fill_type="solid")
 
-# Three-zone header palette (v1.9 column layout, 41 cols):
-#   A–K   (cols  1–11): chip-list metadata + MPN/Manufacture     → dark blue + white text
-#   L–AF  (cols 12–32): per-row distributor data, computed cols, business-fill → light orange + black text
-#   AG+   (cols 33+ ):  ref_* technical / audit fields           → dark grey + white text
+# Three-zone header palette (v1.10 column layout, 42 cols — was 41 in v1.9):
+#   A–L   (cols  1–12): chip-list metadata + raw MPN + cleaned MPN + Manufacture..risk → dark blue + white text
+#   M–AG  (cols 13–33): per-row distributor data, computed cols, business-fill         → light orange + black text
+#   AH+   (cols 34+ ):  ref_* technical / audit fields                                 → dark grey + white text
 HEADER_FILL_BLUE = PatternFill(start_color="FF1F4E78", end_color="FF1F4E78", fill_type="solid")
 HEADER_FILL_ORANGE = PatternFill(start_color="FFFCE4D6", end_color="FFFCE4D6", fill_type="solid")
 HEADER_FILL_GREY = PatternFill(start_color="FF595959", end_color="FF595959", fill_type="solid")
 HEADER_FONT_WHITE = Font(bold=True, color="FFFFFFFF", name="Calibri")
 HEADER_FONT_BLACK = Font(bold=True, color="FF000000", name="Calibri")
 
+# v1.11 — 8 procurement-key columns get a dark-red header to draw the eye.
+# Overrides the zone-based palette above when matched (by column NAME, not
+# index — survives future column reorderings).
+HEADER_FILL_DARK_RED = PatternFill(start_color="FFC00000", end_color="FFC00000", fill_type="solid")
+HIGHLIGHT_HEADER_COLUMNS: set[str] = {
+    "in_stock",
+    "Broker name",
+    "Warehouse/vender",
+    "Is_orig_manufacture",
+    "Is_cheapest",
+    "Available Quantity",
+    "ship infor after order placed",
+    "Unit price w/o VAT (max qty)",
+}
 
-def _header_style(col_idx: int) -> tuple[PatternFill, Font]:
-    """Return (fill, font) for the header cell at the given 1-based column index."""
-    if col_idx <= 11:
+
+def _header_style(col_idx: int, col_name: str | None = None) -> tuple[PatternFill, Font]:
+    """Return (fill, font) for the header cell.
+
+    v1.11 — when `col_name` is in HIGHLIGHT_HEADER_COLUMNS, override the
+    zone-based palette with dark-red + white. Otherwise fall through to the
+    3-zone layout: blue (cols 1-12), orange (13-33), grey (34+).
+    """
+    if col_name in HIGHLIGHT_HEADER_COLUMNS:
+        return HEADER_FILL_DARK_RED, HEADER_FONT_WHITE
+    if col_idx <= 12:
         return HEADER_FILL_BLUE, HEADER_FONT_WHITE
-    if col_idx <= 32:
+    if col_idx <= 33:
         return HEADER_FILL_ORANGE, HEADER_FONT_BLACK
     return HEADER_FILL_GREY, HEADER_FONT_WHITE
 
@@ -274,6 +307,14 @@ def load_chip_meta(path: Path) -> dict[str, dict]:
 
     Reads sheet `Part List Modify`. Required columns: `Manufacture Part Number`
     plus everything in CHIP_FIELDS. Duplicates after the first are ignored.
+
+    v1.10 — dual-key lookup. The dict key (used to join against the upstream
+    `input_mpn`) is the normalized value of:
+      - `MPN_cleaned` column if present (chip list was produced by the agent
+        cleaner per CLAUDE.md Hard Rule #8), OR
+      - `Manufacture Part Number` column as fallback (legacy chip list).
+    The raw `Manufacture Part Number` value is always stored in the meta dict
+    so the output can show it alongside the cleaned MPN.
     """
     if not path.exists():
         raise SystemExit(f"chip list not found: {path}")
@@ -288,17 +329,21 @@ def load_chip_meta(path: Path) -> dict[str, dict]:
             continue
         header_to_col[str(v).strip()] = c
     needed = ["Manufacture Part Number", *CHIP_FIELDS]
+    # `Manufacture Part Number` is already in CHIP_FIELDS as of v1.10 — dedup before
+    # checking required-columns presence to avoid spurious "missing" report.
+    needed = list(dict.fromkeys(needed))
     missing = [h for h in needed if h not in header_to_col]
     if missing:
         raise SystemExit(f"chip list missing required columns: {missing}")
-    mpn_col = header_to_col["Manufacture Part Number"]
+    # v1.10 — prefer MPN_cleaned as the join key; fall back to raw MPN col.
+    join_key_col = header_to_col.get("MPN_cleaned", header_to_col["Manufacture Part Number"])
     meta: dict[str, dict] = {}
     for r in range(2, ws.max_row + 1):
-        raw_mpn = ws.cell(r, mpn_col).value
-        mpn = normalize_mpn(raw_mpn)
-        if not mpn or mpn in meta:
+        join_key_raw = ws.cell(r, join_key_col).value
+        key = normalize_mpn(join_key_raw)
+        if not key or key in meta:
             continue
-        meta[mpn] = {h: ws.cell(r, header_to_col[h]).value for h in CHIP_FIELDS}
+        meta[key] = {h: ws.cell(r, header_to_col[h]).value for h in CHIP_FIELDS}
     return meta
 
 
@@ -370,7 +415,13 @@ def build_output_row(raw: dict, chip_meta: dict, columns: list[str]) -> dict:
         if kind == "merge":
             out[col] = raw.get(key)
         elif kind == "chip":
-            out[col] = meta.get(key)
+            value = meta.get(key)
+            # v1.10 — `Manufacture Part Number` column shows the raw chip-list
+            # MPN. When there's no chip-list match, fall back to input_mpn
+            # (the agent-cleaned MPN we searched on) so the cell isn't blank.
+            if value is None and col == "Manufacture Part Number":
+                value = raw.get("input_mpn")
+            out[col] = value
         elif kind == "lead_time":
             out[col] = days_to_weeks(raw.get(key))
         else:  # "computed", "blank", or unknown — fill later or leave None
@@ -477,7 +528,7 @@ def annotate_is_orig_manufacture(out_rows: list[dict]) -> int:
 
 
 def compute_price_ranks(out_rows: list[dict]) -> tuple[int, int]:
-    """Group rows by Manufacture Part Number and:
+    """Group rows by MPN_cleaned_byAgent and:
        - set Is_cheapest=True on the min-price row(s) per MPN (ties → all True)
        - set price_rank using dense rank (1, 2, 2, 3) ascending by price
 
@@ -485,11 +536,16 @@ def compute_price_ranks(out_rows: list[dict]) -> tuple[int, int]:
     price_rank=None. Operates on Unit price w/o VAT (max qty) — the
     procurement-relevant tier.
 
+    v1.10 — grouping key is `MPN_cleaned_byAgent` (canonical cleaned form)
+    rather than `Manufacture Part Number` (raw chip-list MPN), because the
+    raw column may vary across rows of the same chip (chip-list match vs
+    fallback to input_mpn), which would break per-MPN grouping.
+
     Returns (n_cheapest_rows, n_mpns_with_ranks).
     """
     by_mpn: dict[str, list[dict]] = defaultdict(list)
     for r in out_rows:
-        mpn = r.get("Manufacture Part Number")
+        mpn = r.get("MPN_cleaned_byAgent")
         if mpn:
             by_mpn[mpn].append(r)
 
@@ -541,11 +597,16 @@ def is_high_risk_in_stock(out_row: dict) -> bool:
 
 
 def _sort_key(out_row: dict) -> tuple:
-    """Procurement sort: risk (high first), MPN, Broker, then qty desc."""
+    """Procurement sort: risk (high first), MPN, Broker, then qty desc.
+
+    v1.10 — sort by `MPN_cleaned_byAgent` (canonical cleaned form) so all
+    rows of the same chip cluster together regardless of raw chip-list
+    variations. Falls back to `Manufacture Part Number` if cleaned is missing.
+    """
     risk = out_row.get("risk")
     risk_str = risk.strip().lower() if isinstance(risk, str) else ""
     rank = RISK_RANK.get(risk_str, 2 if risk_str else 3)
-    mpn = out_row.get("Manufacture Part Number") or ""
+    mpn = out_row.get("MPN_cleaned_byAgent") or out_row.get("Manufacture Part Number") or ""
     broker = out_row.get("Broker name") or ""
     qty = out_row.get(QTY_HEADER)
     qty_neg = -(qty if isinstance(qty, int) else 0)
@@ -568,7 +629,7 @@ def _style_workbook(ws, columns: list[str], rows: list[dict]) -> None:
     header_align = Alignment(vertical="center", wrap_text=True)
     for col_idx, col in enumerate(columns, 1):
         c = ws.cell(row=1, column=col_idx, value=col)
-        fill, font = _header_style(col_idx)
+        fill, font = _header_style(col_idx, col)
         c.fill = fill
         c.font = font
         c.alignment = header_align
@@ -624,7 +685,8 @@ _DATA_DICT_ROWS: list[tuple[str, str, str]] = [
     ("Project",                             "text",   "Project name"),
     ("EMS/Finish Goods",                    "text",   "EMS or finished-goods"),
     ("12NC_PCBA",                           "text",   "12NC"),
-    ("Manufacture Part Number",             "text",   "MPN"),
+    ("Manufacture Part Number",             "text",   "Raw MPN as written in the chip list (preserves package suffix / variant descriptors / Chinese annotations)"),
+    ("MPN_cleaned_byAgent",                 "text",   "Agent-cleaned MPN actually sent to API/Scraper sources (and used as chip-list join key). See CLAUDE.md Hard Rule #8."),
     ("Manufacture",                         "text",   "Manufacturer Name"),
     ("Quantity",                            "int",    ""),
     ("Currency",                            "text",   ""),
@@ -907,9 +969,13 @@ def main() -> int:
     n_scr_ok_total = len(scr_rows)
     n_scr_kept = len(scr_kept)
     n_scr_suppressed = len(scr_suppressed)
-    chips_high_risk = len({r.get("Manufacture Part Number") for r in sheet1_rows})
-    chips_total_merged = len({r.get("Manufacture Part Number") for r in sheet2_rows})
-    chips_matched = sum(1 for m in {r.get("Manufacture Part Number") for r in sheet2_rows}
+    # v1.10 — count chips by MPN_cleaned_byAgent (canonical cleaned form), since
+    # `Manufacture Part Number` is now the raw chip-list MPN which may differ
+    # between chip-list-matched rows and no-chip-list-match fallback rows for
+    # the same chip.
+    chips_high_risk = len({r.get("MPN_cleaned_byAgent") for r in sheet1_rows})
+    chips_total_merged = len({r.get("MPN_cleaned_byAgent") for r in sheet2_rows})
+    chips_matched = sum(1 for m in {r.get("MPN_cleaned_byAgent") for r in sheet2_rows}
                         if m and normalize_mpn(m) in chip_meta)
     print(f"Chip list (Part List Modify)        : {len(chip_meta)} unique MPNs")
     if args.scraper_only:

@@ -1,7 +1,7 @@
 ﻿# Data Sources Overview — Cross-Distributor Inventory
 
 **Date:** 2026-05-20 (rev 2 — bom2buy reactivated as a scraper since the 5-19 reports)
-**Sources:** consolidates `api/doc/api_report_v2.md` (2026-05-19) and `scraper/doc/scraper_report_v3.md` (2026-05-19), against the empirical **107-chip** sweeps from 2026-05-20 (new master list: `ref/Shortage Emergency Response List_v2.xlsx`).
+**Sources:** consolidates `api/doc/api_report_v2.md` (2026-05-19) and `scraper/doc/scraper_report_v3.md` (2026-05-19), against the empirical **107-chip** sweeps from 2026-05-20 (master list: `ref/Raw_chip_list_20260520.xlsx`).
 
 This is a top-level inventory of every distributor data source the pipeline can reach, with track availability (web scraper vs official API), quality grades, and recommended use. For per-source technical depth (auth, schema, gotchas) read the underlying track reports.
 

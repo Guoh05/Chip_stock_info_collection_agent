@@ -7,7 +7,7 @@ no browser, no anti-bot fight.
 
 <!-- BEGIN AUTO:status — managed by api/scripts/_update_readme_status.py (see "Auto-updating this README" at bottom) -->
 
-## Status snapshot (2026-05-20)
+## Status snapshot (2026-05-24)
 
 | Vendor | Endpoint | Auth | Working? |
 |---|---|---|---|
@@ -17,17 +17,17 @@ no browser, no anti-bot fight.
 | **Arrow Electronics** Pricing & Availability v4 | `GET api.arrow.com/itemservice/v4/en/search/list` | querystring `login` + `apikey` (BOTH required); same pair also nested in the `req` JSON payload. Inventory is republished across `webSites[].sources[]` so the same physical stock may appear under Verical and Arrow ACNA/EUROPE — dedup by `(fohQty, shipsFrom, shipsIn)` before summing. | ✅ |
 | Element14 / Farnell (e络盟) | `GET api.element14.com/catalog/products` | API key in querystring; default store `cn.element14.com`; uses `term=manuPartNum:<MPN>` (NOT `manuPartNumber`); `versionNumber` is NOT a valid param. Lead time `stock.leastLeadTime` is in **days** (not weeks). Quota: 2 req/s, 1,000/day. | ✅ |
 
-**Latest batch run:** `test/api/BatchTest_20260520_07_40_36/` — 107 MPNs × 5 source(s) = 535 (chip × source) pairs.
+**Latest batch run:** `test/api/BatchTest_20260524_22_25_41/` — 27 MPNs × 5 source(s) = 135 (chip × source) pairs.
 
 | Source | OK | No results | Failed | OK % |
 |---|---|---|---|---|
-| Mouser_贸泽 | 62 | 45 | 0 | 57.9 % |
-| DIGIKEY_得捷电子 | 63 | 44 | 0 | 58.9 % |
-| ELEMENT14_e络盟 | 46 | 61 | 0 | 43.0 % |
-| ARROW_艾睿 | 45 | 62 | 0 | 42.1 % |
-| LCSC_立创商城 | 75 | 32 | 0 | 70.1 % |
+| Mouser_贸泽 | 13 | 14 | 0 | 48.1 % |
+| DIGIKEY_得捷电子 | 13 | 14 | 0 | 48.1 % |
+| ELEMENT14_e络盟 | 8 | 19 | 0 | 29.6 % |
+| ARROW_艾睿 | 8 | 19 | 0 | 29.6 % |
+| LCSC_立创商城 | 18 | 9 | 0 | 66.7 % |
 
-**Manufacturer-name mismatches surfaced:** 37 — `Z0103MN,135` (ELEMENT14_e络盟: WEEN → STMICROELECTRONICS), `HT66F0021 8SOP TR` (Mouser_贸泽: HOLTEK → ROHM Semiconductor), `BT139-600E` (LCSC_立创商城: WEEN → minos(迈诺斯)), `BTA312-600B/DG,127` (ARROW_艾睿: WEEN → NXP Semiconductors), `BT131-600/DG,116` (ARROW_艾睿: WEEN → NXP Semiconductors), and 32 more.
+**Manufacturer-name mismatches surfaced:** 9 — `HC89F3541B` (LCSC_立创商城: 芯圣 → holychip(芯圣电子)), `MP1470GJ-Z` (DIGIKEY_得捷电子: MPS → Monolithic Power Systems Inc.), `MP1470GJ-Z` (LCSC_立创商城: MPS → TECH PUBLIC(台舟)), `B2225NCP` (LCSC_立创商城: On-bright (昂宝) → OB(昂宝)), `79L05` (Mouser_贸泽: ALJ (龙晶微) → STMicroelectronics), and 4 more.
 
 <!-- END AUTO:status -->
 

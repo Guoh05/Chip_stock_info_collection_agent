@@ -4,7 +4,7 @@ Track 1 of the chip-availability pipeline. Drives distributor websites with `cur
 
 <!-- BEGIN AUTO:status — managed by scraper/scripts/_update_readme_status.py (see "Auto-updating this README" at bottom) -->
 
-## Status snapshot (2026-05-20)
+## Status snapshot (2026-05-24)
 
 | Channel | Method | Working? |
 |---|---|---|
@@ -20,23 +20,22 @@ Track 1 of the chip-availability pipeline. Drives distributor websites with `cur
 | Mouser (贸泽, mouser.cn / .com) | Blocked by Akamai BotManager `bm-verify` — use api/scripts/api_mouser.py instead | ❌ |
 | Arrow (艾睿, arrow.com) | Blocked by Akamai BotManager `_abck` — use api/scripts/api_arrow.py (key pending) | ❌ |
 
-**Latest batch run:** `test/scraper/BatchTest_20260520_07_40_03/` — 107 MPNs × 9 source(s) = 963 cells.
+**Latest batch run:** `test/scraper/BatchTest_20260524_22_27_16/` — 27 MPNs × 8 source(s) = 216 cells.
 
 | Channel | OK | No results | Blocked | Failed | OK % |
 |---|---|---|---|---|---|
-| LCSC | 84 | 23 | 0 | 0 | 78.5 % |
-| Digikey | 60 | 0 | 3 | 44 | 56.1 % |
-| HQEW | 88 | 19 | 0 | 0 | 82.2 % |
-| Future | 55 | 52 | 0 | 0 | 51.4 % |
-| RS Online | 31 | 76 | 0 | 0 | 29.0 % |
-| Oneyac | 54 | 53 | 0 | 0 | 50.5 % |
-| ICKEY | 86 | 21 | 0 | 0 | 80.4 % |
-| Rochester | 12 | 95 | 0 | 0 | 11.2 % |
-| Bom2buy | 64 | 43 | 0 | 0 | 59.8 % |
+| LCSC | 18 | 9 | 0 | 0 | 66.7 % |
+| Digikey | 13 | 0 | 0 | 14 | 48.1 % |
+| HQEW | 25 | 2 | 0 | 0 | 92.6 % |
+| Future | 12 | 15 | 0 | 0 | 44.4 % |
+| RS Online | 0 | 27 | 0 | 0 | 0.0 % |
+| Oneyac | 15 | 12 | 0 | 0 | 55.6 % |
+| ICKEY | 16 | 11 | 0 | 0 | 59.3 % |
+| Rochester | 2 | 25 | 0 | 0 | 7.4 % |
 
-Cross-source coverage: **3** chip(s) returned ok on all 9 sources; 17 on 8; 20 on 7; 6 on 6; 11 on 5; 14 on 4; 21 on 3; 8 on 2; 5 on 1; 2 on none.
+Cross-source coverage: 2 on 7; 8 on 6; 3 on 5; 1 on 4; 1 on 3; 5 on 2; 7 on 1.
 
-**Manufacturer-name mismatches surfaced:** 72 — `ATXMEGA32E5-ANR` (ONEYAC: MICROCHIP → 唯样海外代购), `HT66F017-HF` (ICKEY: HOLTEK → HONGFA/厦门宏发), `Z0103MN,135` (ONEYAC: WEEN → STMicro), `B32933A3334K3` (HQEW: TDK → EPCOS), `CY8C21434-24LQXIT` (HQEW: INFINEON → CYPRESS), and 67 more.
+**Manufacturer-name mismatches surfaced:** 19 — `HC89F3541B` (LCSC: 芯圣 → holychip(芯圣电子)), `HC89F3541B` (HQEW: 芯圣 → HOLYCHIP), `MP1470GJ-Z` (LCSC: MPS → TECH PUBLIC(台舟)), `MP1470GJ-Z` (DIGIKEY: MPS → Monolithic Power Systems Inc.), `MP1470GJ-Z` (ONEYAC: MPS → TECH PUBLIC), and 14 more.
 
 <!-- END AUTO:status -->
 
@@ -83,7 +82,7 @@ CLI flags:
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--xlsx PATH` | `ref/Shortage Emergency Response List_v2.xlsx` | Input chip list. New schema since 2026-05-20: header row 1, sheet `Part List Modify`, MPN col `Manufacture Part Number`, mfr col `Manufacture`. MPNs are deduped (107 unique from 280 raw rows in v2). The legacy `Chip_DataSource_Master.xlsx` (header row 4, cols 1 & 2) is still supported via the loader's backward-compat path. |
+| `--xlsx PATH` | `ref/Raw_chip_list_20260520.xlsx` | Input chip list. New schema since 2026-05-20: header row 1, sheet `Part List Modify`, MPN col `Manufacture Part Number`, mfr col `Manufacture`. MPNs are deduped (107 unique from 280 raw rows). The legacy `Chip_DataSource_Master.xlsx` (header row 4, cols 1 & 2) is still supported via the loader's backward-compat path. |
 | `--mpns CSV` | none | Semicolon-separated `MPN[:MFR]` list — overrides --xlsx. NB: MPNs containing `:` (e.g. typo'd `BTA206X-800CT:127`) get chopped — use `--mpns-file` instead. |
 | `--mpns-file PATH` | none | Tab-separated file: one MPN per line, `MPN<TAB>MFR` (MFR optional). Lines starting with `#` ignored. Safe for MPNs containing `:`. |
 | `--limit N` | none | Process only the first N valid MPNs (dry-run aid). |

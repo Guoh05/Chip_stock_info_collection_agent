@@ -25,13 +25,65 @@ Folder layout: test/scraper/Test_<MPN>_RSONLINE_<YYYYMMDD>_<HH>_<MM>_<SS>/
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
+import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from curl_cffi import requests as cf_requests
 from playwright.sync_api import sync_playwright
+
+
+# --- Cross-process request throttle (defends against RS WAF) ---
+# RS Online's WAF rate-limits if hit too fast (memory: ~5 rps threshold) and
+# returns empty product-list pages that look like genuine no_results. Even
+# though batch_scraper_test.py runs chips sequentially, RSONLINE calls land
+# back-to-back across chips (~50s apart) — that has empirically been enough
+# to start tripping the WAF on a 107-chip sweep. This file-lock-based throttle
+# enforces a minimum gap between any two RS HTTP requests across all
+# concurrent subprocesses on the same machine. Sentinel files live in the
+# user temp dir so they survive subprocess boundaries.
+_THROTTLE_SEC = 3.0
+_THROTTLE_LOCK = Path(tempfile.gettempdir()) / "rsonline_throttle.lock"
+_THROTTLE_LAST = Path(tempfile.gettempdir()) / "rsonline_last_call.txt"
+
+
+def _rs_throttle() -> None:
+    """Block until at least _THROTTLE_SEC has elapsed since the last RS request
+    (any subprocess). Updates the shared timestamp file under an exclusive
+    O_EXCL lock so concurrent subprocesses serialise cleanly."""
+    # Spin-acquire the lock file (held briefly — only across the read/sleep/write).
+    fd = None
+    while True:
+        try:
+            fd = os.open(str(_THROTTLE_LOCK), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            time.sleep(0.05)
+    try:
+        last = 0.0
+        if _THROTTLE_LAST.exists():
+            try:
+                last = float(_THROTTLE_LAST.read_text().strip())
+            except (ValueError, OSError):
+                last = 0.0
+        wait = _THROTTLE_SEC - (time.time() - last)
+        if wait > 0:
+            time.sleep(wait)
+        try:
+            _THROTTLE_LAST.write_text(str(time.time()))
+        except OSError:
+            pass
+    finally:
+        if fd is not None:
+            os.close(fd)
+        try:
+            os.unlink(_THROTTLE_LOCK)
+        except OSError:
+            pass
 
 import sys as _sys
 from pathlib import Path as _Path
@@ -390,6 +442,7 @@ def scrape(part: str, run_dir: Path) -> dict:
     s.headers.update({"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"})
 
     # --- Stage 1: search ---
+    _rs_throttle()
     print(f"[rsonline] GET {search_url}")
     r = s.get(search_url, timeout=20, allow_redirects=True)
     record["attempts"].append({
@@ -434,6 +487,7 @@ def scrape(part: str, run_dir: Path) -> dict:
     print(f"[rsonline] detail → {detail_url}")
 
     # --- Stage 2: detail ---
+    _rs_throttle()
     rd = s.get(detail_url, timeout=20, allow_redirects=True)
     record["attempts"].append({
         "method": "curl_cffi", "profile": "chrome131", "url": detail_url,

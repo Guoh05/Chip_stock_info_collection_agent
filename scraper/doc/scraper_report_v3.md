@@ -1,7 +1,7 @@
 ﻿# Web Scraper Test Report v3 — 9 Working Sources + Batch Driver + Audited Data
 
-**Date:** 2026-05-20 (rev. since 2026-05-19 — bom2buy recovered via Opera-profile session reuse + master input swapped to Shortage Emergency Response List v2)
-**Scope of changes since v2:** 4 → 9 working scrapers, 3 additional sources evaluated and dropped, batch driver + warehouse-exploded `batch_index.csv` schema aligned with the API track, comprehensive audit of every scraper to remove fabricated labels ("uncertain → blank, never invent"), **bom2buy default post-step in the batch driver**, **master input migrated to `ref/Shortage Emergency Response List_v2.xlsx` sheet `Part List Modify` (107 unique MPNs after dedup, MPN col `Manufacture Part Number`)**.
+**Date:** 2026-05-20 (rev. since 2026-05-19 — bom2buy recovered via Opera-profile session reuse + master input swapped to the v2 chip list, since renamed 2026-05-22 to `Raw_chip_list_20260520.xlsx`)
+**Scope of changes since v2:** 4 → 9 working scrapers, 3 additional sources evaluated and dropped, batch driver + warehouse-exploded `batch_index.csv` schema aligned with the API track, comprehensive audit of every scraper to remove fabricated labels ("uncertain → blank, never invent"), **bom2buy default post-step in the batch driver**, **master input migrated to `ref/Raw_chip_list_20260520.xlsx` sheet `Part List Modify` (107 unique MPNs after dedup, MPN col `Manufacture Part Number`; renamed 2026-05-22 from `Shortage Emergency Response List_v2.xlsx` for a uniform `Raw_chip_list_<YYYYMMDD>.xlsx` convention)**.
 **Stack:** Python 3.10.9 (`.venv/`), `curl_cffi` 0.15.0 (TLS impersonation), Playwright Chromium **and** Firefox + `playwright-stealth`, **Playwright over user's Opera install (bom2buy)**, BeautifulSoup/lxml, openpyxl.
 
 ## TL;DR
@@ -185,7 +185,8 @@ Engine change: Playwright Firefox unchanged, but the JS extractor now:
 - **Stock extraction:** Adobe analytics `_satellite_pageBottom` data layer. Look for `"stockinfo":{"date":"…","quantity":"…","status":"IN_STOCK"}`. Both `date` and `quantity` can be pipe-separated for batched promises ("15 件将从其他地点发货 | 另外 100 件将于 2026年5月25日 发货").
 - **OOS path:** `stockinfo.quantity=""` + `status="OUT_OF_STOCK"` → `stock_now_qty=0`, `stock_now_ship_text="暂时缺货"`, `stock_future_ship_text="<date> 发货"` (when date present). No fabricated warehouse name.
 - **Variant matching:** Exact MPN → fuzzy alphanumeric-substring → else `no_results`. Without the fuzzy guard, RS's category-related fallback list silently returned unrelated parts (EMW3080 → ST Discovery kit).
-- **Known caveat:** rate-limited by RS WAF if hit too fast. Sweep on 2026-05-19 showed 5.9 % pass (3/51) due to WAF; isolated runs typically reach 70 %+. Add throttling or back off if you see all calls returning 2-3 KB empty pages.
+- **Known caveat:** rate-limited by RS WAF if hit too fast. Sweep on 2026-05-19 showed 5.9 % pass (3/51); on 2026-05-21 only 3.7 % (4/107). Isolated / sequential-with-throttle runs typically reach ~70 %+.
+- **Mitigation shipped 2026-05-21:** `scrape_rsonline.py` now self-throttles to a 3 s minimum gap between any two RS HTTP requests across all concurrent subprocesses on the same machine. Implementation: file-lock + shared-timestamp sentinel files under `%TEMP%/rsonline_throttle.lock` and `rsonline_last_call.txt`; `_rs_throttle()` is called before each `curl_cffi.get()` (both search and detail GETs). Throttle is preventive — it does not reset an already-tripped WAF rolling window.
 
 ### 6. ONEYAC (唯样商城, oneyac.com) — NEW since v2
 
@@ -278,7 +279,7 @@ Carried from v2:
 New for v3:
 - **`ships_from` population** — currently empty across all scraper rows (only ARROW on the API track populates it from `site_sources[].shipsFrom`). Adding country-of-origin parsing for Future + LCSC would close this gap.
 - **HQEW per-supplier prices** — currently `extracted.prices` is the top-level 云价格 only. Each supplier row's actual quoted price requires login + 询价; not feasible without credentials.
-- **RSONLINE rate-limit hardening** — single-token bucket with backoff would lift the 5.9 % sweep pass-rate back to the ~70 % isolated-run baseline.
+- ~~**RSONLINE rate-limit hardening**~~ — **shipped 2026-05-21:** cross-process file-lock throttle (3 s min gap) inside `scrape_rsonline.py`. Expected to lift the 3.7-5.9 % sweep pass-rate back toward the ~70 % isolated-run baseline; verification deferred to next full sweep (WAF must reset first).
 - **Auto-recovery of LCSC `_tmp_NNN` exceptions** — wrap the affected step in retry-once-after-cleanup.
 - **Audit pass for HQEW / ICKEY / Rochester** — only LCSC / DIGIKEY / RSONLINE / ONEYAC / FUTURE have had the "no-fabricated-labels" audit. The remaining three should be audited the same way before declaring v3 complete.
 

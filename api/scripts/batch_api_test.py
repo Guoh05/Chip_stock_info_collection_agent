@@ -64,7 +64,7 @@ ENV_ROOTS = {
     "test": PROJECT_ROOT / "test",
     "prod": PROJECT_ROOT / "production",
 }
-DEFAULT_XLSX = PROJECT_ROOT / "ref" / "Shortage Emergency Response List_v2.xlsx"
+DEFAULT_XLSX = PROJECT_ROOT / "ref" / "Raw_chip_list_20260520.xlsx"
 DEFAULT_XLSX_SHEET = "Part List Modify"
 DEFAULT_XLSX_MPN_HEADER = "Manufacture Part Number"
 DEFAULT_XLSX_MFR_HEADER = "Manufacture"
@@ -216,7 +216,7 @@ def load_chip_list(
     """Return ([{row, input_mpn, expected_mfr}, ...], skipped[]) — dedup'd by MPN.
 
     Source-of-truth contract (per user 2026-05-20):
-      file:   ref/Shortage Emergency Response List_v2.xlsx
+      file:   ref/Raw_chip_list_20260520.xlsx
       sheet:  "Part List Modify"
       MPN:    column with header "Manufacture Part Number" (cells may have a
               leading non-breaking space U+00A0 — stripped here)
