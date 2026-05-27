@@ -1,0 +1,108 @@
+/* Chip Stock Webapp — M0 styles
+ * Visual conventions sync xlsx (decisions #14 / #27):
+ *  · header zone colors (T1 dark blue, T2 light orange) hinted via tier-N
+ *  · 8 procurement-key columns get dark red header (.highlight)
+ *  · in-stock rows get green tint
+ */
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; font-family: "Calibri", Arial, sans-serif; background: #f6f7f8; color: #222; }
+.container { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
+
+/* header / footer */
+.site-header { background: #1F4E78; color: #fff; padding: 12px 0; box-shadow: 0 2px 4px rgba(0,0,0,.1); }
+.site-header .container { display: flex; align-items: center; justify-content: space-between; }
+.brand { color: #fff; font-size: 18px; font-weight: bold; text-decoration: none; }
+.phase-tag { background: #C00000; color: #fff; padding: 2px 6px; font-size: 11px; border-radius: 3px; margin-left: 8px; }
+.site-header nav a { color: #fff; margin-left: 16px; text-decoration: none; font-size: 14px; }
+.site-header nav a:hover { text-decoration: underline; }
+.site-footer { padding: 32px 24px; color: #888; text-align: center; }
+main.container { padding: 24px; background: #fff; min-height: 70vh; border-radius: 4px; margin-top: 16px; margin-bottom: 16px; }
+
+h1 { font-size: 22px; margin-top: 0; color: #1F4E78; }
+h2 { font-size: 18px; color: #1F4E78; }
+code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+
+/* query page */
+.freshness-hint { background: #FFF4D6; border-left: 4px solid #E68A00; padding: 10px 14px; margin: 0 0 16px 0; font-size: 14px; }
+.error-banner { background: #FFE0E0; border-left: 4px solid #C00000; padding: 10px 14px; margin: 0 0 16px 0; color: #C00000; }
+.tabs { display: flex; gap: 0; border-bottom: 2px solid #ddd; margin-bottom: 16px; }
+.tab { background: none; border: none; border-bottom: 3px solid transparent; padding: 10px 20px; font-size: 14px; cursor: pointer; color: #666; }
+.tab.active { color: #1F4E78; border-bottom-color: #1F4E78; font-weight: bold; }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+.tab-pane label { display: block; margin: 12px 0 6px; font-weight: 600; }
+.tab-pane textarea { width: 100%; padding: 10px; font-family: "Consolas", monospace; font-size: 13px; border: 1px solid #ccc; border-radius: 3px; }
+.tab-pane input[type=file] { padding: 6px; }
+.hint { font-size: 13px; color: #555; margin: 8px 0; }
+.muted { color: #888; font-size: 13px; }
+.demo-note { background: #f0f8ff; border: 1px dashed #888; padding: 6px 10px; border-radius: 3px; }
+a.disabled { color: #999; pointer-events: none; }
+
+/* buttons */
+.primary, button[type=submit], .button.primary { background: #1F4E78; color: #fff; border: none; padding: 8px 18px; font-size: 14px; border-radius: 3px; cursor: pointer; margin-top: 12px; text-decoration: none; display: inline-block; }
+.primary:hover { background: #2A6299; }
+.primary[disabled], button[disabled] { background: #999; cursor: not-allowed; }
+.button { display: inline-block; padding: 6px 12px; background: #eee; color: #333; border-radius: 3px; text-decoration: none; font-size: 13px; margin-right: 4px; }
+.button:hover { background: #ddd; }
+
+/* run page — waiting */
+.run-meta { color: #555; margin: 12px 0; }
+.phases { margin: 24px 0; }
+.phase { display: flex; align-items: center; padding: 10px 14px; border-left: 4px solid #ccc; margin: 6px 0; background: #fafafa; }
+.phase-running { border-left-color: #E68A00; background: #FFF4D6; }
+.phase-ok { border-left-color: #5CB85C; background: #E8F5E8; }
+.phase-failed { border-left-color: #C00000; background: #FFE0E0; }
+.phase-icon { font-size: 20px; width: 32px; }
+.phase-label { flex: 1; font-weight: 600; }
+.phase-status { color: #666; font-family: "Consolas", monospace; }
+
+/* run page — empty state (decision #25) */
+.empty-state { background: #FFF4D6; border: 1px solid #E68A00; padding: 24px; border-radius: 4px; margin: 24px 0; }
+.empty-state h2 { color: #E68A00; margin-top: 0; }
+.empty-state ul { margin: 8px 0 16px 20px; }
+
+/* run page — error box */
+.error-box { background: #FFE0E0; border: 1px solid #C00000; padding: 16px; border-radius: 4px; margin: 16px 0; }
+.error-box h3 { color: #C00000; margin-top: 0; }
+
+/* result table — visual sync with xlsx */
+.table-wrap { overflow-x: auto; margin: 16px 0; }
+.result-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.result-table th { padding: 8px 10px; text-align: left; white-space: nowrap; font-weight: bold; border: 1px solid #fff; }
+.result-table td { padding: 6px 10px; border-bottom: 1px solid #eee; white-space: nowrap; }
+.result-table th.tier-1 { background: #1F4E78; color: #fff; }       /* T1 = chip-list + key MPN cols → blue */
+.result-table th.tier-2 { background: #FCE4D6; color: #000; }       /* T2 = secondary distrib cols → orange */
+.result-table th.highlight { background: #C00000; color: #fff; }    /* 8 procurement-key cols → dark red */
+.result-table tr.in-stock { background: #E8F5E8; }                  /* mirrors xlsx in_stock=True green fill */
+.result-table tr:hover { background: #F0F0F0; }
+.result-table tr.in-stock:hover { background: #D8EDD8; }
+.result-table td.tier-1 { font-weight: 500; }
+
+/* bool render */
+.bool-yes { color: #5CB85C; font-weight: bold; }
+.bool-no { color: #C00000; }
+
+/* risk badge */
+.badge { display: inline-block; padding: 2px 8px; font-size: 12px; font-weight: 600; border-radius: 3px; }
+.badge-high { background: #C00000; color: #fff; }
+.badge-medium, .badge-med { background: #E68A00; color: #fff; }
+.badge-low { background: #ccc; color: #333; }
+
+/* review page (M2) */
+.review-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+.review-table th { background: #1F4E78; color: #fff; padding: 8px 12px; text-align: left; }
+.review-table td { padding: 8px 12px; border-bottom: 1px solid #eee; vertical-align: top; }
+.review-table tr.row-changed { background: #FFF8E0; }
+.review-table tr.row-warn { background: #FFE0E0; }
+.review-table tr:hover { background: #f0f0f0; }
+.warn { color: #C00000; font-weight: 600; }
+
+/* history page */
+.history-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 16px; }
+.history-table th { background: #1F4E78; color: #fff; padding: 8px 12px; text-align: left; }
+.history-table td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+.history-table tr:hover { background: #f8f8f8; }
+.status-ok { color: #5CB85C; font-weight: 600; }
+.status-fail { color: #C00000; font-weight: 600; }
+.status-running { color: #E68A00; font-weight: 600; }

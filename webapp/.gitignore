@@ -1,0 +1,18 @@
+# Runtime / per-run data — never commit (decision #32 retention rules)
+runs/
+tmp/
+logs/
+backups/
+
+# SQLite — recreated by storage.init_db() on startup
+*.db
+*.db-wal
+*.db-shm
+
+# Local env (decision #42) — secrets stay out of git
+.env
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo

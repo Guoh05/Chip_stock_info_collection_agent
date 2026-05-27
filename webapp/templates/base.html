@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Chip Stock Webapp{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container">
+            <a href="/query" class="brand">Chip Stock Webapp <span class="phase-tag">M0</span></a>
+            <nav>
+                <a href="/query">新查询</a>
+                <a href="/history">历史</a>
+            </nav>
+        </div>
+    </header>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="site-footer container">
+        <small>M0 视觉 demo · Phase 2 webapp · Versuni</small>
+    </footer>
+</body>
+</html>

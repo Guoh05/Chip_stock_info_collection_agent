@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}清洗预览{% endblock %}
+{% block content %}
+
+{% set changed_count = results | selectattr('changed') | list | length %}
+{% set warn_count = results | selectattr('warning') | list | length %}
+{% set unchanged_count = results|length - changed_count - warn_count %}
+
+<h1>清洗预览</h1>
+<p class="run-meta">
+    共 <strong>{{ results|length }}</strong> 个 MPN：
+    <span class="status-ok">{{ unchanged_count }} 个原样</span> ·
+    <span class="status-running">{{ changed_count }} 个自动清洗</span>
+    {% if warn_count %}· <span class="status-fail">{{ warn_count }} 个需关注</span>{% endif %}
+</p>
+<p class="hint">
+    机械规则（剥封装代码后缀、剥 <code>MCU-</code> 前缀、剥 <code>()</code> 内容等）会自动应用。
+    标 ⚠️ 的项 webapp 不会改动，请人工确认是否需要编辑。
+    可以直接在下方编辑后再提交。
+</p>
+
+<table class="review-table">
+    <thead>
+        <tr><th style="width:36%">原始 MPN</th><th></th><th style="width:36%">清洗后</th><th>规则 / 警告</th></tr>
+    </thead>
+    <tbody>
+        {% for r in results %}
+        <tr class="{% if r.warning %}row-warn{% elif r.changed %}row-changed{% endif %}">
+            <td><code>{{ r.raw }}</code></td>
+            <td style="text-align:center">{% if r.changed %}→{% else %}={% endif %}</td>
+            <td><code>{{ r.cleaned }}</code></td>
+            <td>
+                {% if r.warning %}<span class="warn">⚠️ {{ r.warning }}</span>{% endif %}
+                {% if r.rules_applied %}<span class="muted">{{ r.rules_applied | join('; ') }}</span>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if metadata %}
+<h2 style="margin-top:32px">业务元数据（来自上传文件）</h2>
+<p class="hint">这些字段（Manufacture / Type / risk）不发给查询 source，仅用于结果展示。
+   用户上传值会覆盖系统主清单的同列值（决策 #29）。</p>
+<table class="review-table">
+    <thead>
+        <tr>
+            <th>MPN</th><th>Manufacture</th><th>Type</th><th>risk</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for m in metadata %}
+        <tr>
+            <td><code>{{ m.get('Manufacture Part Number', '') }}</code></td>
+            <td>{{ m.get('Manufacture', '') or '—' }}</td>
+            <td>{{ m.get('Type', '') or '—' }}</td>
+            <td>{{ m.get('risk', '') or '—' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<h2 style="margin-top:32px">最终 MPN 列表（提交前可编辑）</h2>
+<form action="/query/confirm" method="post">
+    <input type="hidden" name="token" value="{{ token }}">
+    <p class="hint">每行一个 MPN。修改后会同步到清洗后列表。</p>
+    <textarea name="final_mpns" rows="{{ [results|length + 2, 14] | min }}">{% for r in results %}{{ r.cleaned }}
+{% endfor %}</textarea>
+    <div style="margin-top:16px;">
+        <label class="hint" style="display:block;margin-bottom:8px;">
+            <input type="checkbox" name="force_rerun" value="1">
+            强制重新跑（绕开 24h 缓存）—— 默认 off：24h 内同 MPN 集合查询会直接复用结果
+        </label>
+        <button type="submit" class="primary">✓ 确认开始查询</button>
+        <a href="/query" class="button">取消</a>
+    </div>
+</form>
+
+{% endblock %}

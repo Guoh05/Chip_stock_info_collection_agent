@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}查询 {{ run.run_id }}{% endblock %}
+{% block content %}
+
+{% if overall_status == "running" or overall_status == "queued" %}
+<h1>查询进行中</h1>
+<p class="run-meta">
+    run_id: <code>{{ run.run_id }}</code> · 提交了 {{ run.mpns|length }} 个 MPN
+</p>
+
+<div class="phases">
+    {% set phase_labels = {"api": "Phase 1: API sweep", "scraper_main": "Phase 2: Web scraper", "merge": "Phase 3: 合并结果"} %}
+    {% for key in ["api", "scraper_main", "merge"] %}
+    <div class="phase phase-{{ phases[key] }}" id="phase-{{ key }}">
+        <span class="phase-icon">
+            {% if phases[key] == "running" %}▣{% elif phases[key] == "ok" %}✅{% elif phases[key] == "failed" %}❌{% elif phases[key] == "skipped" %}⊝{% else %}▢{% endif %}
+        </span>
+        <span class="phase-label">{{ phase_labels[key] }}</span>
+        <span class="phase-status">
+            {% if phases[key] == "running" %}[运行中]{% elif phases[key] == "ok" %}[完成]{% elif phases[key] == "failed" %}[失败]{% elif phases[key] == "skipped" %}[跳过]{% else %}[等待]{% endif %}
+        </span>
+    </div>
+    {% endfor %}
+</div>
+
+<p class="muted">预计 5~30 分钟完成。完成后页面会自动刷新并发邮件通知。</p>
+<p class="muted">查看 pipeline 实时日志：<code>webapp/runs/{{ run.run_id }}/pipeline.log</code></p>
+
+<script>
+async function poll() {
+    try {
+        const r = await fetch("/r/{{ run.run_id }}/status");
+        const data = await r.json();
+        const map = {pending: "▢", running: "▣", ok: "✅", failed: "❌", skipped: "⊝"};
+        const labels = {pending: "[等待]", running: "[运行中]", ok: "[完成]", failed: "[失败]", skipped: "[跳过]"};
+        for (const key of ["api", "scraper_main", "merge"]) {
+            const el = document.getElementById("phase-" + key);
+            if (!el) continue;
+            const st = data.phases[key] || "pending";
+            el.className = "phase phase-" + st;
+            el.querySelector(".phase-icon").textContent = map[st] || "▢";
+            el.querySelector(".phase-status").textContent = labels[st] || "[等待]";
+        }
+        if (data.status === "done" || data.status === "failed" || data.status === "done_empty") {
+            location.reload();
+        } else {
+            setTimeout(poll, 2000);
+        }
+    } catch (e) {
+        setTimeout(poll, 5000);
+    }
+}
+setTimeout(poll, 2000);
+</script>
+
+{% elif overall_status == "done" or overall_status == "done_empty" %}
+<h1>查询结果</h1>
+{% if cache_hit %}
+<div class="freshness-hint" style="background:#E0F0FF;border-left-color:#1F4E78;">
+    🔁 24 小时内同 MPN 集合的查询已存在，直接复用此结果。如需重新跑，请在 /query 重新提交并勾选"强制重新跑"。
+</div>
+{% endif %}
+<p class="run-meta">
+    run_id: <code>{{ run.run_id }}</code> ·
+    共找到 <strong>{{ results|length }}</strong> 行现货数据 ·
+    <a href="/r/{{ run.run_id }}/download" class="button">下载完整 xlsx</a>
+</p>
+
+{% if show_empty or results|length == 0 %}
+<div class="empty-state">
+    <h2>本次查询无现货可用</h2>
+    <p>
+        你查询的 {{ run.mpns|length }} 个 MPN 在搜索的 source 都没有现货库存。
+        可下载完整 xlsx 查看：
+    </p>
+    <ul>
+        <li>工厂订货 Lead Time 选项</li>
+        <li>未来到货时间</li>
+        <li>全部 source 的尝试详情（含 in_stock=False 行）</li>
+    </ul>
+    <a href="/r/{{ run.run_id }}/download" class="button primary">下载完整 xlsx</a>
+</div>
+{% else %}
+<div class="table-wrap">
+<table class="result-table">
+    <thead>
+        <tr>
+            {% for col, meta in schema.items() %}
+            <th class="tier-{{ meta.tier }} {% if col in highlight %}highlight{% endif %}"
+                title="{{ col }}">
+                {{ meta.label }}
+            </th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in results %}
+        <tr class="{% if row['in_stock'] %}in-stock{% endif %}">
+            {% for col, meta in schema.items() %}
+            <td class="tier-{{ meta.tier }}">
+                {% if meta.render == "bool" %}
+                    {% if row.get(col) %}<span class="bool-yes">✓</span>{% else %}<span class="bool-no">✗</span>{% endif %}
+                {% elif meta.render == "badge" %}
+                    {% set v = row.get(col, '') %}
+                    {% if v %}<span class="badge badge-{{ v|lower }}">{{ v }}</span>{% else %}—{% endif %}
+                {% else %}
+                    {{ row.get(col) | render_cell(meta.render) }}
+                {% endif %}
+            </td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+<p class="muted">
+    按决策 #25/#26 过滤排序：仅显示 in_stock=True 行；排序 risk → Type → MPN → Broker → 数量降序。
+</p>
+{% endif %}
+
+{% elif overall_status == "failed" %}
+<h1>查询失败</h1>
+<p class="run-meta">run_id: <code>{{ run.run_id }}</code></p>
+<div class="error-box">
+    <h3>❌ Pipeline 报错</h3>
+    {% if error_text %}
+    <pre style="white-space: pre-wrap; font-size: 12px; max-height: 400px; overflow-y: auto;">{{ error_text }}</pre>
+    {% else %}
+    <p>无可用错误信息。</p>
+    {% endif %}
+    <p class="muted">完整日志：<code>webapp/runs/{{ run.run_id }}/pipeline.log</code></p>
+</div>
+<a href="/query" class="button primary">新查询</a>
+
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}历史{% endblock %}
+{% block content %}
+<h1>我的查询历史</h1>
+
+{% if runs|length == 0 %}
+<div class="empty-state">
+    <p>还没有查询记录。<a href="/query">去发起第一次查询</a></p>
+</div>
+{% else %}
+
+<table class="history-table">
+    <thead>
+        <tr>
+            <th>提交时间</th>
+            <th>run_id</th>
+            <th>MPN 数</th>
+            <th>状态</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in runs %}
+        <tr>
+            <td>{{ r.submitted_at }}</td>
+            <td><code>{{ r.run_id }}</code></td>
+            <td>{{ r.mpns|length }}</td>
+            <td>
+                {% if r.display_status == "done" %}<span class="status-ok">✅ Done</span>
+                {% elif r.display_status == "done_empty" %}<span class="status-ok">✅ Done (无现货)</span>
+                {% elif r.display_status == "failed" %}<span class="status-fail">❌ Failed</span>
+                {% elif r.display_status == "running" %}<span class="status-running">🔄 Running</span>
+                {% else %}<span>{{ r.display_status }}</span>
+                {% endif %}
+            </td>
+            <td>
+                <a href="/r/{{ r.run_id }}" class="button">查看</a>
+                <a href="/query?prefill={{ r.run_id }}" class="button">重新跑</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<p class="muted">
+    "重新跑" 跳转到 /query 并把 MPN 列表预填到粘贴框；用户必须重新点提交（决策 #31）。
+    （M0 演示：预填逻辑在 M2 完成。）
+</p>
+
+{% endif %}
+{% endblock %}

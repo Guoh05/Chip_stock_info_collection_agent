@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}新查询{% endblock %}
+{% block content %}
+<h1>新查询</h1>
+
+<div class="freshness-hint">
+    每次查询都需要新粘贴 MPN 或上传文件。历史页的"重新跑"也会跳回这里，需要再次提交。
+</div>
+
+{% if error %}
+<div class="error-banner">{{ error }}</div>
+{% endif %}
+
+<div class="tabs">
+    <button class="tab active" data-tab="paste" type="button">粘贴 MPN</button>
+    <button class="tab" data-tab="upload" type="button">上传 Excel</button>
+</div>
+
+<form action="/query" method="post" id="paste-form" class="tab-pane active">
+    <input type="hidden" name="mode" value="paste">
+    <label for="mpns_text">MPN 列表（<strong>每行一个</strong>）：</label>
+    <p class="hint">
+        从 Excel 列复制粘贴最方便。<strong>不要用逗号/分号/空格分隔</strong>——MPN 内部本身就可能含
+        <code>,</code>（NXP <code>BT168GW,115</code>）、<code>-</code>（<code>BD18333EUV-ME2</code>）、
+        空格等字符。
+    </p>
+    <textarea id="mpns_text" name="mpns_text" rows="12"
+              placeholder="STM32G030F6P6&#10;NRF52840&#10;BT168GW,115&#10;BD18333EUV-ME2">{{ prefill or '' }}</textarea>
+    <button type="submit" class="primary">提交查询</button>
+</form>
+
+<form action="/query" method="post" enctype="multipart/form-data" id="upload-form" class="tab-pane">
+    <input type="hidden" name="mode" value="upload">
+    <label>上传业务清单 Excel：</label>
+    <p class="hint">
+        必须使用统一模板。模板含 4 列：<code>Manufacture Part Number</code>（必填）/
+        <code>Manufacture</code> / <code>Type</code> / <code>risk</code>（可选）。
+        <a href="/query/template" class="button">下载模板.xlsx</a>
+    </p>
+    <p class="hint">
+        Type 和 risk 列只在网页和邮件结果里展示，不发给查询 source。
+        用户上传值覆盖系统主清单的同列值。
+    </p>
+    <input type="file" name="upload" accept=".xlsx">
+    <button type="submit" class="primary">上传并查询</button>
+    <p class="muted">提示：上传后会显示清洗预览页，可以编辑后再确认</p>
+</form>
+
+<script>
+document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab + '-form').classList.add('active');
+    });
+});
+</script>
+{% endblock %}
