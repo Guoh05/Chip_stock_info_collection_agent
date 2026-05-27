@@ -109,16 +109,18 @@ def _process(run_id: str) -> None:
         "--mpns-file", str(tsv_path),
         "--skip-bom2buy",
     ]
+    # NOTE: use --key=value syntax (not "--key value" two-arg form) — orchestrator's
+    # argparse rejects two-arg values when the value starts with '--' (e.g. when
+    # PIPELINE_SCRAPER_ARGS='--sequential'). The '=' form is unambiguous.
     if PIPELINE_API_ARGS.strip():
-        cmd += ["--api-args", PIPELINE_API_ARGS]
+        cmd += [f"--api-args={PIPELINE_API_ARGS}"]
     if PIPELINE_SCRAPER_ARGS.strip():
-        cmd += ["--scraper-args", PIPELINE_SCRAPER_ARGS]
+        cmd += [f"--scraper-args={PIPELINE_SCRAPER_ARGS}"]
     if PIPELINE_CHIP_LIST and Path(PIPELINE_CHIP_LIST).exists():
-        # NOTE: run_pipeline.py uses shlex.split() on --merge-args, which on
-        # Windows eats backslashes ('C:\Users\...' -> 'C:Users...'). Normalize
-        # to forward slashes — Windows accepts them in file paths.
+        # Windows + shlex.split(): backslashes get eaten. Use forward slashes
+        # (Windows accepts them in file paths) so the path survives unscathed.
         chip_list_posix = Path(PIPELINE_CHIP_LIST).as_posix()
-        cmd += ["--merge-args", f"--chip-list {chip_list_posix}"]
+        cmd += [f"--merge-args=--chip-list {chip_list_posix}"]
 
     log_path = run_dir / "pipeline.log"
     log.info("%s: cmd = %s", run_id, " ".join(shlex.quote(c) for c in cmd))
