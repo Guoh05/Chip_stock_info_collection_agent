@@ -64,7 +64,7 @@ ENV_ROOTS = {
     "test": PROJECT_ROOT / "test",
     "prod": PROJECT_ROOT / "production",
 }
-PYTHON = str(PROJECT_ROOT / ".venv" / "Scripts" / "python.exe")
+PYTHON = sys.executable
 STATE_VERSION = 1
 PHASE_ORDER = ("api", "scraper_main", "bom2buy", "merge")
 BOM2BUY_CAPTCHA_EXIT_CODE = 3
