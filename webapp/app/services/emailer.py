@@ -45,8 +45,16 @@ def _send(to: str, subject: str, html_body: str, text_fallback: str) -> bool:
             s.send_message(msg)
         log.info("[email] sent to=%s subject=%r", to, subject)
         return True
-    except Exception as e:  # noqa: BLE001 — surfaceable error
-        log.exception("[email] send failed to=%s: %s", to, e)
+    except Exception as e:  # noqa: BLE001
+        # Fallback: log the text body so user can copy a Magic Link from
+        # journalctl when SMTP is broken (e.g. Microsoft disabled basic auth
+        # for Hotmail personal accounts late 2024).
+        log.error("[email] send failed to=%s: %s", to, e)
+        log.warning(
+            "[email] FALLBACK — body printed below so you can copy any URL:\n"
+            "-- text fallback --\n%s\n-- end --",
+            text_fallback,
+        )
         return False
 
 
