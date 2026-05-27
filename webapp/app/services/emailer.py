@@ -36,14 +36,23 @@ def _send(to: str, subject: str, html_body: str, text_fallback: str) -> bool:
     msg.set_content(text_fallback)
     msg.add_alternative(html_body, subtype="html")
 
+    # Port-based mode selection:
+    #   465 → implicit SSL (SMTP_SSL) — 163 / qq / aliyun-dm pattern
+    #   else (587 / 25 / 80) → STARTTLS upgrade (smtp-mail.outlook.com pattern)
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
-            s.ehlo()
-            s.starttls()
-            s.ehlo()
-            s.login(SMTP_USER, SMTP_PASS)
-            s.send_message(msg)
-        log.info("[email] sent to=%s subject=%r", to, subject)
+        if SMTP_PORT == 465:
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+                s.login(SMTP_USER, SMTP_PASS)
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+                s.ehlo()
+                s.starttls()
+                s.ehlo()
+                s.login(SMTP_USER, SMTP_PASS)
+                s.send_message(msg)
+        log.info("[email] sent to=%s subject=%r via %s:%s",
+                 to, subject, SMTP_HOST, SMTP_PORT)
         return True
     except Exception as e:  # noqa: BLE001
         # Fallback: log the text body so user can copy a Magic Link from
