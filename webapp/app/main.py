@@ -12,8 +12,8 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import storage
-from .config import LOGS_DIR, STATIC_DIR
-from .routers import history, query, runs
+from .config import AUTH_REQUIRED, LOGS_DIR, STATIC_DIR
+from .routers import auth, history, query, runs
 from .services import pipeline_runner
 
 # Basic logging (M3 will rotate to webapp/logs/app.log)
@@ -31,10 +31,11 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Chip Stock Webapp", version="M2", lifespan=lifespan)
+app = FastAPI(title="Chip Stock Webapp", version="M3", lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+app.include_router(auth.router)
 app.include_router(query.router)
 app.include_router(runs.router)
 app.include_router(history.router)
@@ -47,4 +48,4 @@ async def root():
 
 @app.get("/healthz")
 async def healthz():
-    return {"status": "ok", "phase": "M2"}
+    return {"status": "ok", "phase": "M3", "auth_required": AUTH_REQUIRED}

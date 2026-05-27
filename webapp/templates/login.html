@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}登录{% endblock %}
+{% block content %}
+
+<h1>登录 Chip Stock Webapp</h1>
+
+{% if auth_disabled %}
+<div class="freshness-hint">
+    本地开发模式 — 未配置 ALLOWLIST_EMAILS，访问无需登录。直接 <a href="/query">/query</a>。
+</div>
+{% endif %}
+
+{% if error %}
+<div class="error-banner">{{ error }}</div>
+{% endif %}
+
+<form action="/login" method="post" style="max-width: 460px;">
+    <label for="email">邮箱地址：</label>
+    <p class="hint">
+        我们会发送一个一次性登录链接到你的邮箱（15 分钟内有效）。
+        只有 allowlist 内的邮箱可登录。
+    </p>
+    <input type="email" id="email" name="email" required
+           placeholder="ext_hao.guo@versuni.com" autocomplete="email"
+           style="width: 100%; padding: 8px 10px; font-size: 14px;
+                  border: 1px solid #ccc; border-radius: 3px;">
+    <button type="submit" class="primary">发送登录链接</button>
+</form>
+
+{% endblock %}

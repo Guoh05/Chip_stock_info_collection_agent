@@ -54,6 +54,24 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_runs_owner ON runs (owner_email, submitted_at DESC);
             CREATE INDEX IF NOT EXISTS idx_runs_hash ON runs (mpns_hash, status);
+
+            CREATE TABLE IF NOT EXISTS magic_links (
+                token       TEXT PRIMARY KEY,
+                email       TEXT NOT NULL,
+                created_at  TEXT NOT NULL,
+                expires_at  TEXT NOT NULL,
+                consumed_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_ml_email ON magic_links (email, expires_at);
+
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id TEXT PRIMARY KEY,
+                email      TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                last_seen_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_sess_email ON sessions (email, expires_at);
         """)
 
 
@@ -155,6 +173,81 @@ def mark_failed(run_id: str, error_text: str) -> None:
         "UPDATE runs SET status='failed', finished_at=?, error_text=? WHERE run_id=?",
         (datetime.now().isoformat(timespec="seconds"), error_text, run_id),
     )
+    c.commit()
+
+
+# ---------- Magic Link / Sessions (decision #10) ----------
+
+def new_magic_link(token: str, email: str, ttl_minutes: int) -> None:
+    from datetime import timedelta
+    now = datetime.now()
+    expires = now + timedelta(minutes=ttl_minutes)
+    c = _conn()
+    c.execute(
+        "INSERT INTO magic_links (token, email, created_at, expires_at) VALUES (?, ?, ?, ?)",
+        (token, email.lower(), now.isoformat(timespec="seconds"),
+         expires.isoformat(timespec="seconds")),
+    )
+    c.commit()
+
+
+def consume_magic_link(token: str) -> str | None:
+    """Verify token unused + not expired; mark consumed. Return email or None."""
+    c = _conn()
+    row = c.execute(
+        """SELECT email FROM magic_links
+           WHERE token=? AND consumed_at IS NULL
+             AND datetime(expires_at) >= datetime('now', 'localtime')""",
+        (token,),
+    ).fetchone()
+    if row is None:
+        return None
+    c.execute(
+        "UPDATE magic_links SET consumed_at=? WHERE token=?",
+        (datetime.now().isoformat(timespec="seconds"), token),
+    )
+    c.commit()
+    return row["email"]
+
+
+def new_session(session_id: str, email: str, ttl_days: int) -> None:
+    from datetime import timedelta
+    now = datetime.now()
+    expires = now + timedelta(days=ttl_days)
+    c = _conn()
+    c.execute(
+        """INSERT INTO sessions (session_id, email, created_at, expires_at, last_seen_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (session_id, email.lower(),
+         now.isoformat(timespec="seconds"),
+         expires.isoformat(timespec="seconds"),
+         now.isoformat(timespec="seconds")),
+    )
+    c.commit()
+
+
+def lookup_session(session_id: str) -> str | None:
+    """Return email if session valid; bump last_seen_at."""
+    c = _conn()
+    row = c.execute(
+        """SELECT email FROM sessions
+           WHERE session_id=?
+             AND datetime(expires_at) >= datetime('now', 'localtime')""",
+        (session_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    c.execute(
+        "UPDATE sessions SET last_seen_at=? WHERE session_id=?",
+        (datetime.now().isoformat(timespec="seconds"), session_id),
+    )
+    c.commit()
+    return row["email"]
+
+
+def revoke_session(session_id: str) -> None:
+    c = _conn()
+    c.execute("DELETE FROM sessions WHERE session_id=?", (session_id,))
     c.commit()
 
 

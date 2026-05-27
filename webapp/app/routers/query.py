@@ -21,7 +21,8 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from .. import storage
-from ..config import DEV_OWNER_EMAIL, RUNS_DIR, TEMPLATES_DIR
+from ..auth import require_user_or_redirect
+from ..config import RUNS_DIR, TEMPLATES_DIR
 from ..services import pipeline_runner
 from ..services.excel_input import (
     ExcelParseError, make_template_xlsx, parse_upload, write_input_csv,
@@ -82,11 +83,19 @@ def _parse_paste(text: str) -> tuple[list[str] | None, str | None]:
 
 @router.get("/query")
 async def query_page(request: Request):
-    return templates.TemplateResponse("query.html", {"request": request})
+    email, redirect = require_user_or_redirect(request)
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(
+        "query.html", {"request": request, "current_user": email},
+    )
 
 
 @router.get("/query/template")
-async def download_template():
+async def download_template(request: Request):
+    email, redirect = require_user_or_redirect(request)
+    if redirect:
+        return redirect
     xlsx_bytes = make_template_xlsx()
     return Response(
         content=xlsx_bytes,
@@ -102,6 +111,9 @@ async def submit_query(
     mpns_text: str = Form(""),
     upload: UploadFile | None = File(None),
 ):
+    email, redirect = require_user_or_redirect(request)
+    if redirect:
+        return redirect
     metadata: list[dict] | None = None
 
     if mode == "paste":
@@ -144,8 +156,6 @@ async def submit_query(
     clean_results, has_changes = clean_batch(mpns)
 
     if has_changes or mode == "upload":
-        # Mode B always shows review (lets user confirm metadata too).
-        # Mode A only shows review when cleaner changed something.
         token = _stash(
             [r.cleaned for r in clean_results],
             metadata,
@@ -163,7 +173,7 @@ async def submit_query(
         )
 
     # No changes for Mode A → straight through
-    return _create_and_enqueue([r.cleaned for r in clean_results], None)
+    return _create_and_enqueue([r.cleaned for r in clean_results], None, email=email)
 
 
 @router.post("/query/confirm")
@@ -173,6 +183,9 @@ async def confirm_review(
     final_mpns: str = Form(""),
     force_rerun: str = Form(""),
 ):
+    email, redirect = require_user_or_redirect(request)
+    if redirect:
+        return redirect
     pending = _pop(token)
     if not pending:
         return templates.TemplateResponse(
@@ -214,24 +227,23 @@ async def confirm_review(
         if not matched_metadata:
             matched_metadata = None  # all final MPNs were user-added; no metadata to write
 
-    return _create_and_enqueue(final, matched_metadata, force_rerun=bool(force_rerun))
+    return _create_and_enqueue(final, matched_metadata, email=email, force_rerun=bool(force_rerun))
 
 
 def _create_and_enqueue(
-    mpns: list[str], metadata: list[dict] | None, force_rerun: bool = False,
+    mpns: list[str], metadata: list[dict] | None, *, email: str, force_rerun: bool = False,
 ) -> RedirectResponse:
-    # Decision #18: 24h cache check before queueing pipeline
     if not force_rerun:
         mpns_hash = storage.hash_mpns(mpns)
         cached = storage.find_cached_run(mpns_hash, hours=24)
-        if cached and cached["owner_email"] == DEV_OWNER_EMAIL:
+        if cached and cached["owner_email"] == email:
             log.info("cache hit: redirecting to existing run %s", cached["run_id"])
             return RedirectResponse(
                 url=f"/r/{cached['run_id']}?cache_hit=1", status_code=303,
             )
 
     run_id = f"r_{datetime.now().strftime('%Y%m%d')}_{uuid.uuid4().hex[:6]}"
-    storage.new_run(run_id, mpns, owner_email=DEV_OWNER_EMAIL)
+    storage.new_run(run_id, mpns, owner_email=email)
     if metadata:
         try:
             write_input_csv(metadata, RUNS_DIR / run_id / "input.csv")

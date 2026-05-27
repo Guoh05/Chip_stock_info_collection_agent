@@ -13,6 +13,10 @@
             <nav>
                 <a href="/query">新查询</a>
                 <a href="/history">历史</a>
+                {% if current_user %}
+                <span style="color:#bbb; margin-left:16px; font-size:13px;">{{ current_user }}</span>
+                <a href="/logout" style="font-size:13px;">注销</a>
+                {% endif %}
             </nav>
         </div>
     </header>

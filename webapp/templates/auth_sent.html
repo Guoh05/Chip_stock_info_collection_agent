@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}请查收邮件{% endblock %}
+{% block content %}
+
+<h1>📬 请查收邮件</h1>
+
+<div class="empty-state" style="background:#E0F0FF; border-color:#1F4E78;">
+    <h2 style="color:#1F4E78;">登录链接已发送到 {{ email }}</h2>
+    <p>
+        请在 15 分钟内点击邮件中的链接完成登录。链接只能使用一次。
+    </p>
+    <ul>
+        <li>如果几分钟内未收到邮件，请检查垃圾箱。</li>
+        <li>如果邮箱未在 allowlist，邮件不会到达（出于安全考虑，本页不区分这两种情况）。</li>
+        <li>需要重新申请？<a href="/login">回到登录页</a></li>
+    </ul>
+</div>
+
+{% endblock %}
