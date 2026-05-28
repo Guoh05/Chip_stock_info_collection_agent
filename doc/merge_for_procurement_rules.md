@@ -75,12 +75,29 @@ Validation against the latest 1700-row merge: 10 unique `(Mfr, Warehouse)` true 
 
 ### `Is_cheapest` (bool) + `price_rank` (int)
 
-Grouped by `Manufacture Part Number`, post-VAT-strip:
+Grouped by `MPN_cleaned_byAgent` (the agent-cleaned canonical MPN — not the raw `Manufacture Part Number`, which may differ across rows of the same chip), post-VAT-strip:
 
-- `Is_cheapest = True` for the row(s) with the **minimum `Unit price w/o VAT (max qty)`** in that MPN. Ties → all tied-min rows marked True.
+- `Is_cheapest = True` for the row(s) with the **minimum `Unit price w/o VAT (max qty)`** in that MPN group. Ties → all tied-min rows marked True.
 - `price_rank`: dense rank (1, 2, 2, 3) ascending by `Unit price w/o VAT (max qty)`.
 - Rows with null or 0 price are **excluded** from the comparison → `Is_cheapest = False`, `price_rank = blank`.
 - `Unit price w/o VAT (max qty)` (not `(min qty)`) is the comparison key because the max-tier price is the procurement-relevant one.
+
+## v1.12 packaging column
+
+`packaging` (col 18, right after `Is_orig_manufacture`) is populated from the upstream `packaging_option` field on both tracks (API + scraper). Source-native wording is preserved verbatim — no translation:
+
+- DigiKey API: `Tape & Reel (TR)` / `Cut Tape (CT)` / `Digi-Reel®`
+- Element14 API: `Cut Tape` / `Full Reel` / `Re-Reel` / `Each`
+- Mouser API: `Tape & Reel` / `Cut Tape` (heuristic)
+- Arrow API: `Cut Strips` (sparse; mostly blank)
+- LCSC scraper: `编带` / `管装` / `散料`
+- DigiKey scraper: 中文 (e.g. `散料`, `卷带（TR）`)
+- Future scraper: `Tray` / `Reel` / `Tube`
+- Rochester scraper: from datasheet `Packaging Type` row
+- bom2buy: **per-distributor** — same MPN may show different `packaging` values across its warehouse rows (Tray / Each / Bulk / Tube from different distributors). This is by design — do NOT aggregate.
+- HQEW / ONEYAC / ICKEY / RSONLINE / LCSC API: blank (source doesn't expose).
+
+Sheet 3 (`ref_scraper_api_diff`) does **not** carry this column — same precedent as v1.9 computed cols (extension columns stay Sheet-2-only).
 
 ## VAT-strip rule
 
@@ -95,7 +112,7 @@ This is why the columns are named `Unit price w/o VAT (...)` — for CNY rows th
 | `High_risk_positive_stock` | **hidden** | `risk == "high"` AND `Available Quantity > 0` | **None** — every row is in-stock by definition |
 | `All_data` | **visible, default** | All merged rows (post-filter) | Green (`FFC6EFCE`) if `in_stock`; light grey (`FFEEEEEE`) if `Available Quantity == 0`; no fill for `None`-qty (factory lead) |
 | `ref_scraper_api_diff` | **hidden** | Mismatched scraper rows only (see above) | None |
-| `Data dictionary` | visible | One row per `All_data` column: `Column` + `Type` + `Description` (descriptions sourced from `ref/merged_output_fields_mapping_v3_20260520.xlsx`) | None |
+| `Data dictionary` | visible | One row per `All_data` column: `Column` + `Type` + `Description` (descriptions sourced from `ref/merged_output_fields_mapping_v5_20260527.xlsx`) | None |
 | `Source Availability` | visible | Port of the TL;DR table in `doc/data_sources_overview.md` (sans `Best use`). `Scraper 可靠性` column is hidden by default. | None |
 
 `Data dictionary` and `Source Availability` are reference sheets — content is hardcoded in the merge script (low churn, small data; auto-sync would over-engineer).
@@ -103,10 +120,10 @@ This is why the columns are named `Unit price w/o VAT (...)` — for CNY rows th
 **Unified sort across the three data sheets**: `risk` (`high` → `low` → other → null) → `Manufacture Part Number` (asc) → `Broker name` (asc) → `Available Quantity` (desc). Encoded by `_sort_key()` in the merge script.
 
 Shared styling:
-- Header row: bold + `wrap_text`, colored by **column range** (v1.10 layout, 42 cols):
+- Header row: bold + `wrap_text`, colored by **column range** (v1.12 layout, 43 cols):
   - **A–L** (cols 1–12, chip-list metadata + raw MPN + cleaned MPN + Manufacture..risk): dark blue `#1F4E78` background + white font.
-  - **M–AG** (cols 13–33, in_stock + distributor data + computed cols + 3 business-fill cols): light orange `#FCE4D6` background + black font.
-  - **AH onwards** (cols 34+, `ref_*` audit fields): dark grey `#595959` background + white font.
+  - **M–AH** (cols 13–34, in_stock + distributor data + computed cols + packaging + 3 business-fill cols): light orange `#FCE4D6` background + black font.
+  - **AI onwards** (cols 35+, `ref_*` audit fields): dark grey `#595959` background + white font.
 - **v1.11 header highlight (overrides the zone palette above by column NAME)**: the following 8 procurement-key columns get **dark red `#C00000` + white font** — these are the columns procurement uses most when scanning the workbook:
   - `in_stock`
   - `Broker name`
@@ -132,9 +149,9 @@ Default-hidden by `_apply_column_hides()` — can be unhidden manually in Excel:
 - `Number of price tiers`
 - `price_rank`
 
-That's **13 hidden** out of 42 total in Sheet 2 → **29 visible** by default.
+That's **13 hidden** out of 43 total in Sheet 2 → **30 visible** by default.
 
-### Column list (Sheet 1 & Sheet 2 — 42 cols, in order)
+### Column list (Sheet 1 & Sheet 2 — 43 cols, in order)
 
 ```
 Category, Project, EMS/Finish Goods, 12NC_PCBA,
@@ -144,6 +161,7 @@ Quantity, Currency, Current Price, Type, risk,
 in_stock,                                              ← v1.9 A (moved right after risk)
 Broker name, Data collect method,
 Warehouse/vender, Is_orig_manufacture,                 ← v1.9 E (new computed col)
+packaging,                                             ← v1.12 (new, after Is_orig_manufacture; from upstream packaging_option, source-native wording, visible by default)
 Is_cheapest, price_rank,                               ← v1.9 F (new computed cols; price_rank hidden)
 Stock Location, Available Quantity,
 ship infor after order placed, Lead Time (Week),

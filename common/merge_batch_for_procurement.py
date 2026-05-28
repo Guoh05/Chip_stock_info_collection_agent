@@ -21,6 +21,13 @@ Rules:
    actually sent to sources. Chip-list join uses `MPN_cleaned` column when
    present, falling back to `Manufacture Part Number` for legacy chip lists.
    See CLAUDE.md Hard Rule #8 + memory `feedback_input_review.md`.
+10. v1.12 — new `packaging` column (after `Is_orig_manufacture`) populated
+   from upstream `packaging_option` field on both tracks. Source-native
+   wording preserved (no translation). Sources that don't expose packaging
+   leave it blank (HQEW dropped entirely; Mouser / Arrow / LCSC API blank).
+   bom2buy is per-distributor: same MPN may show different packaging
+   values across its warehouse rows — by design, do not aggregate. Sheet 3
+   does NOT carry this column (computed/extension cols stay Sheet-2-only).
 
 Output: <env_root>/merged/Merge_<api_ts>__<scr_ts>/
         Versuni_chip_stock_availability_check_<YYYYMMDD>.xlsx
@@ -92,6 +99,7 @@ COLUMN_SOURCE_MAP: dict[str, tuple[str, str | None]] = {
     "Data collect method":                   ("merge", "track"),
     "Warehouse/vender":                      ("merge", "warehouse"),
     "Is_orig_manufacture":                   ("computed", None),            # v1.9 E
+    "packaging":                             ("merge", "packaging_option"), # v1.12: shipping/break form (Tape & Reel / Cut Tape / 编带 / 管装 ...); source-native wording, blank if source doesn't expose
     "Is_cheapest":                           ("computed", None),            # v1.9 F
     "price_rank":                            ("computed", None),            # v1.9 F
     "Stock Location":                        ("merge", "ships_from"),
@@ -118,7 +126,7 @@ COLUMN_SOURCE_MAP: dict[str, tuple[str, str | None]] = {
     "ref_status":                            ("merge", "status"),
     "ref_error":                             ("merge", "error"),
 }
-OUTPUT_COLUMNS = list(COLUMN_SOURCE_MAP.keys())   # 41 columns, in output order
+OUTPUT_COLUMNS = list(COLUMN_SOURCE_MAP.keys())   # 43 columns, in output order (v1.12)
 
 # Sheet 3 (cross-validation reference) — narrower subset, same renames, plus
 # the unmapped `note` column (not in COLUMN_SOURCE_MAP — handled in builder).
@@ -168,7 +176,7 @@ COLUMN_WIDTHS: dict[str, float] = {
     "in_stock": 10.0,
     "Broker name": 33.0, "Data collect method": 21.0,
     "Warehouse/vender": 58.9,
-    "Is_orig_manufacture": 19.0, "Is_cheapest": 12.0, "price_rank": 11.0,
+    "Is_orig_manufacture": 19.0, "packaging": 18.0, "Is_cheapest": 12.0, "price_rank": 11.0,
     "Stock Location": 26.0, "Available Quantity": 29.9,
     "ship infor after order placed": 45.0, "Lead Time (Week)": 18.0,
     "MOQ": 10.0,
@@ -190,10 +198,10 @@ RISK_RANK = {"high": 0, "low": 1}
 GREEN = PatternFill(start_color="FFC6EFCE", end_color="FFC6EFCE", fill_type="solid")
 GREY = PatternFill(start_color="FFEEEEEE", end_color="FFEEEEEE", fill_type="solid")
 
-# Three-zone header palette (v1.10 column layout, 42 cols — was 41 in v1.9):
+# Three-zone header palette (v1.12 column layout, 43 cols — was 42 in v1.10):
 #   A–L   (cols  1–12): chip-list metadata + raw MPN + cleaned MPN + Manufacture..risk → dark blue + white text
-#   M–AG  (cols 13–33): per-row distributor data, computed cols, business-fill         → light orange + black text
-#   AH+   (cols 34+ ):  ref_* technical / audit fields                                 → dark grey + white text
+#   M–AH  (cols 13–34): per-row distributor data + computed cols + packaging + business-fill → light orange + black text
+#   AI+   (cols 35+ ):  ref_* technical / audit fields                                 → dark grey + white text
 HEADER_FILL_BLUE = PatternFill(start_color="FF1F4E78", end_color="FF1F4E78", fill_type="solid")
 HEADER_FILL_ORANGE = PatternFill(start_color="FFFCE4D6", end_color="FFFCE4D6", fill_type="solid")
 HEADER_FILL_GREY = PatternFill(start_color="FF595959", end_color="FF595959", fill_type="solid")
@@ -221,13 +229,13 @@ def _header_style(col_idx: int, col_name: str | None = None) -> tuple[PatternFil
 
     v1.11 — when `col_name` is in HIGHLIGHT_HEADER_COLUMNS, override the
     zone-based palette with dark-red + white. Otherwise fall through to the
-    3-zone layout: blue (cols 1-12), orange (13-33), grey (34+).
+    3-zone layout: blue (cols 1-12), orange (13-34), grey (35+).
     """
     if col_name in HIGHLIGHT_HEADER_COLUMNS:
         return HEADER_FILL_DARK_RED, HEADER_FONT_WHITE
     if col_idx <= 12:
         return HEADER_FILL_BLUE, HEADER_FONT_WHITE
-    if col_idx <= 33:
+    if col_idx <= 34:
         return HEADER_FILL_ORANGE, HEADER_FONT_BLACK
     return HEADER_FILL_GREY, HEADER_FONT_WHITE
 
@@ -677,7 +685,7 @@ def _apply_column_hides(ws, columns: list[str]) -> None:
 # ---------- v1.9 I — auxiliary reference sheets ----------------------------
 
 _DATA_DICT_HEADERS = ["Column", "Type", "Description"]
-# Descriptions per ref/merged_output_fields_mapping_v3_20260520.xlsx (Description
+# Descriptions per ref/merged_output_fields_mapping_v5_20260527.xlsx (Description
 # column). Blank entries map to blank cells. Order matches OUTPUT_COLUMNS so
 # the sheet reads top-to-bottom in the same order as All_data's columns.
 _DATA_DICT_ROWS: list[tuple[str, str, str]] = [
@@ -698,8 +706,9 @@ _DATA_DICT_ROWS: list[tuple[str, str, str]] = [
     ("Data collect method",                 "text",   "Which method is using to collect the info. Scraper refers to web-scraping, API refers to official api"),
     ("Warehouse/vender",                    "text",   "Warehouse name OR vender name"),
     ("Is_orig_manufacture",                 "bool",   "TRUE when Warehouse/vender looks like the manufacturer's own warehouse"),
-    ("Is_cheapest",                         "bool",   "TRUE for the row(s) with the minimum Unit price w/o VAT (max qty) for this MPN."),
-    ("price_rank",                          "int",    "1..N rank by ascending Unit price w/o VAT (max qty)."),
+    ("packaging",                           "text",   "Shipping / break form: Tape & Reel, Cut Tape, Digi-Reel®, Tray, Tube, 编带, 管装, 散料, etc. Source-native wording preserved (no translation). Blank when the source doesn't expose this — bom2buy rows hold per-distributor variants, so the same MPN can show different values across rows."),
+    ("Is_cheapest",                         "bool",   "TRUE for the row(s) with the minimum `Unit price w/o VAT (max qty)` within the same MPN (grouped by `MPN_cleaned_byAgent`). Null / 0 prices are excluded from the comparison (Is_cheapest=False). Ties: all tied-min rows marked True."),
+    ("price_rank",                          "int",    "Dense rank (1, 2, 2, 3 — tied prices share a rank) ascending by `Unit price w/o VAT (max qty)` within the same MPN (grouped by `MPN_cleaned_byAgent`). Null / 0 prices are excluded → cell left blank. Hidden by default."),
     ("Stock Location",                      "text",   "Country / region the warehouse ships from"),
     ("Available Quantity",                  "int",    "Units in stock at this warehouse."),
     ("ship infor after order placed",       "text",   "Distributor's SLA / ship-time string"),
