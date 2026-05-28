@@ -36,8 +36,11 @@ PIPELINE_CHIP_LIST = os.environ.get(
 )
 # Default: empty (all sources). Set "--only DIGIKEY" etc. for fast dev smoke.
 PIPELINE_API_ARGS = os.environ.get("WEBAPP_PIPELINE_API_ARGS", "")
+# 3-way parallel: cloud test confirmed 2 parallel chromium = +750 MB peak,
+# avail still ~1 GB. 3 should land around +1.1 GB, leaving ~650 MB buffer on
+# the 3.5 GB cloud VM. Going higher (4+) risks OOM under systemd MemoryMax=2G.
 PIPELINE_SCRAPER_ARGS = os.environ.get(
-    "WEBAPP_PIPELINE_SCRAPER_ARGS", "--sequential"
+    "WEBAPP_PIPELINE_SCRAPER_ARGS", "--max-parallel 3"
 )
 
 # Hardcoded user for local dev (when no session). Cloud uses Magic Link auth.

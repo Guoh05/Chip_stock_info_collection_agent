@@ -1013,6 +1013,13 @@ def main(argv: list[str]) -> int:
                              "channel hits a different domain so there's no per-vendor "
                              "rate-limit collision. Wallclock per chip drops from sum(channels) "
                              "to max(channels), typically a 50–60%% speedup.")
+    parser.add_argument("--max-parallel", type=int, default=None,
+                        help="Cap per-chip parallel channel workers to N (e.g. --max-parallel 3). "
+                             "Default: no cap — the ThreadPool sizes itself to "
+                             "len(channels_used), matching the existing fan-out behaviour. "
+                             "Use this on memory-constrained hosts (e.g. 4 GB cloud VM) where "
+                             "running all 9 chromium instances concurrently exceeds RAM. "
+                             "Ignored when --sequential is set.")
     parser.add_argument("--with-bom2buy", dest="with_bom2buy", action="store_true",
                         default=True,
                         help="After the main sweep, run scrape_bom2buy.py for all MPNs and "
@@ -1088,7 +1095,13 @@ def main(argv: list[str]) -> int:
     all_records: list[dict] = []
 
     parallel = (not args.sequential) and len(channels_used) > 1
-    mode_label = "parallel" if parallel else "sequential"
+    if parallel:
+        # default=None preserves existing behaviour: ThreadPool sized to len(channels_used).
+        pool_size = min(len(channels_used), args.max_parallel) if args.max_parallel else len(channels_used)
+        mode_label = f"parallel (max {pool_size} concurrent)" if args.max_parallel else "parallel"
+    else:
+        pool_size = 1
+        mode_label = "sequential"
     print(f"Channel dispatch: {mode_label} ({len(channels_used)} channel(s) per chip)")
 
     for i, chip in enumerate(chips, 1):
@@ -1102,7 +1115,7 @@ def main(argv: list[str]) -> int:
             # Each channel hits a different domain, so there's no per-vendor
             # rate-limit collision. The chip's wallclock is max(channel times)
             # instead of sum, which is the primary speedup.
-            with ThreadPoolExecutor(max_workers=len(channels_used)) as ex:
+            with ThreadPoolExecutor(max_workers=pool_size) as ex:
                 futures = [
                     ex.submit(process_one_channel, ch, mpn, mfr, batch_dir, args.resume)
                     for ch in channels_used
