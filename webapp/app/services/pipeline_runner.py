@@ -36,7 +36,9 @@ from ..config import (
     PROJECT_ROOT,
     RUNS_DIR,
     TMP_DIR,
+    WEBAPP_BASE_URL,
 )
+from .emailer import send_run_complete
 
 log = logging.getLogger("webapp.runner")
 
@@ -73,7 +75,27 @@ def _worker_loop() -> None:
             except Exception:
                 log.exception("also failed to mark_failed")
         finally:
+            _notify(run_id)
             _WORK_QUEUE.task_done()
+
+
+def _notify(run_id: str) -> None:
+    """Send completion email to the run's owner. Best-effort — never raises."""
+    try:
+        run = storage.get_run(run_id)
+        if not run:
+            return
+        view_url = f"{WEBAPP_BASE_URL.rstrip('/')}/r/{run_id}"
+        send_run_complete(
+            to=run["owner_email"],
+            run_id=run_id,
+            status=run["status"],
+            row_count=run.get("row_count") or 0,
+            view_url=view_url,
+            error_text=run.get("error_text"),
+        )
+    except Exception:
+        log.exception("notify failed for %s", run_id)
 
 
 def _env_root() -> Path:
@@ -200,6 +222,13 @@ def _process(run_id: str) -> None:
         log.exception("parse failed")
         storage.mark_failed(run_id, f"xlsx parse failed: {e!r}")
         return
+
+    # Type/risk are business judgments that must come from the user, never from
+    # the master chip-list join. Wipe them first; overlay below puts user values
+    # back when present (Mode B upload). Mode A (paste) leaves them empty.
+    for record in filtered_rows + all_rows:
+        record["Type"] = ""
+        record["risk"] = ""
 
     # Decision #29: overlay Type/risk/Manufacture from user-uploaded input.csv
     input_csv = run_dir / "input.csv"

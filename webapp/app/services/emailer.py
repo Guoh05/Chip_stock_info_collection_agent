@@ -91,10 +91,67 @@ def send_magic_link(to: str, link: str) -> bool:
     return _send(to, subject, html, text)
 
 
-def send_run_complete(to: str, run_id: str, summary_html: str, xlsx_path: str | None,
-                      view_url: str) -> bool:
-    """M4 entry point. Stub for now — implement when M4 starts."""
-    subject = f"查询结果就绪 — {run_id}"
-    text = f"查询 {run_id} 已完成。打开 {view_url} 查看结果。"
-    # TODO M4: attach xlsx_path if < 20 MB, else just view_url
-    return _send(to, subject, summary_html or text, text)
+def send_run_complete(
+    to: str,
+    run_id: str,
+    status: str,
+    row_count: int,
+    view_url: str,
+    error_text: str | None = None,
+) -> bool:
+    """Notify owner that a run finished. status ∈ {done, done_empty, failed}."""
+    if status == "done":
+        subject = f"查询结果就绪 — {run_id}（{row_count} 行现货）"
+        headline = "查询完成"
+        body_intro = f"共找到 <strong>{row_count}</strong> 行现货数据。"
+        text_intro = f"共找到 {row_count} 行现货数据。"
+    elif status == "done_empty":
+        subject = f"查询完成（无现货）— {run_id}"
+        headline = "查询完成 — 无现货"
+        body_intro = (
+            "本次查询的 MPN 在搜索的 source 都没有现货库存。"
+            "可下载完整 xlsx 查看 Lead Time / 未来到货时间等信息。"
+        )
+        text_intro = body_intro
+    elif status == "failed":
+        subject = f"查询失败 — {run_id}"
+        headline = "查询失败"
+        body_intro = "Pipeline 报错。点击下方按钮查看错误详情。"
+        text_intro = body_intro
+        if error_text:
+            body_intro += (
+                f'<br><pre style="background:#f7f7f7;padding:8px;'
+                f'font-size:12px;white-space:pre-wrap;max-height:200px;'
+                f'overflow:auto;">{error_text[:1200]}</pre>'
+            )
+            text_intro += f"\n\n{error_text[:1200]}"
+    else:
+        subject = f"查询状态更新 — {run_id}"
+        headline = f"查询状态：{status}"
+        body_intro = ""
+        text_intro = ""
+
+    text = (
+        f"{headline}\n\n"
+        f"{text_intro}\n\n"
+        f"查看结果：{view_url}\n\n"
+        f"run_id: {run_id}\n"
+    )
+    html = f"""
+    <div style="font-family: Calibri, Arial, sans-serif; color: #222; max-width: 600px;">
+      <h2 style="color: #1F4E78;">Chip Stock Webapp</h2>
+      <h3>{headline}</h3>
+      <p>{body_intro}</p>
+      <p>
+        <a href="{view_url}" style="display:inline-block; padding: 10px 24px;
+            background: #1F4E78; color: #fff; text-decoration: none;
+            border-radius: 4px;">查看结果</a>
+      </p>
+      <p style="font-size: 12px; color: #666;">
+        如按钮不可点，复制此链接：<br>
+        <code style="word-break: break-all;">{view_url}</code>
+      </p>
+      <p style="font-size: 12px; color: #666;">run_id: <code>{run_id}</code></p>
+    </div>
+    """
+    return _send(to, subject, html, text)
