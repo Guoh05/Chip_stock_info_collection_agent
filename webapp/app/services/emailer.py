@@ -55,15 +55,11 @@ def _send(to: str, subject: str, html_body: str, text_fallback: str) -> bool:
                  to, subject, SMTP_HOST, SMTP_PORT)
         return True
     except Exception as e:  # noqa: BLE001
-        # Fallback: log the text body so user can copy a Magic Link from
-        # journalctl when SMTP is broken (e.g. Microsoft disabled basic auth
-        # for Hotmail personal accounts late 2024).
-        log.error("[email] send failed to=%s: %s", to, e)
-        log.warning(
-            "[email] FALLBACK — body printed below so you can copy any URL:\n"
-            "-- text fallback --\n%s\n-- end --",
-            text_fallback,
-        )
+        # Log error only — do NOT echo body (Magic Link URLs are sensitive).
+        # When SMTP is broken, fix it; don't expose login credentials in logs.
+        # For dev without SMTP, the SMTP_CONFIGURED=False path above logs the
+        # body intentionally (no real send happening).
+        log.error("[email] send failed to=%s subject=%r: %s", to, subject, e)
         return False
 
 

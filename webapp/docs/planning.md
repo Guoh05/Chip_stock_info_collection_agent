@@ -4,7 +4,7 @@
 **仓库形式**：**monorepo 子目录**，与 Phase 1 pipeline 同一 git 仓库（`Chip_stock_info_collection_agent`）
 **关联**：父目录 `02_work_chip_availability/`（Phase 1，CLI pipeline，**只读依赖**）
 **起始日期**：2026-05-27
-**当前状态**：设计阶段（块 1-6）完成；Step 1 风险验证完成；**M0 + M1 + M2 完成**（email 通知留到 M3）；M3 待开始
+**当前状态**：设计阶段（块 1-6）完成；Step 1 风险验证完成；**M0 + M1 + M2 + M3 完成**（云端 webapp 真上线 + Magic Link 邮件真发出 + 业务自助登录跑通）；M4 待开始
 
 ---
 
@@ -33,7 +33,7 @@
 | 9 | 文件存储 | 阿里云本地磁盘；30 天 retention + 每日快照（细节见决策 #32） |
 | 10 | 认证 | Magic Link（邮箱 allowlist + 一次性登录链接） |
 | 11 | 域名/HTTPS | MVP 裸奔 IP + HTTP |
-| 12 | Email | MVP `wlnyyaa@hotmail.com` SMTP；未来切 Versuni 邮箱 |
+| 12 | Email | **实际：Aliyun DirectMail 发，`notify@mail.jiahao520.com` via `smtpdm.aliyun.com:465 SSL`**；原计划 Hotmail SMTP 因 Microsoft 关停 basic auth 不可用；Gmail 因 GFW 不可达；163 因云 IP 信誉低被拒。DirectMail 是 CN 云端 → 外网邮件的唯一稳路径。Sender 域 `mail.jiahao520.com` 在 Aliyun 云解析配 SPF/DKIM/MX/DMARC。收件人：allowlist 邮箱（10 个，含 hotmail + versuni） |
 | 13 | 部署方式 | Claude Code 通过 SSH 直接操作阿里云 |
 | 14 | xlsx 消化方式 | A2：webapp 解析 xlsx 渲染关键列 + 保留下载 |
 | 15 | 进程模型 | 合一：FastAPI + worker 在同一个进程 |
@@ -55,7 +55,7 @@
 | 31 | **输入新鲜度** | **每次查询必须由用户主动上传或粘贴**；/query 页面在无输入时显眼提示；history "重新跑" = redirect /query + MPN 列表预填到粘贴框，**用户仍需点提交** |
 | 32 | **文件保留期** | raw 上传 .xlsx 每日清理；webapp/runs/<run_id>/{input.csv, parsed.json, state_snapshot.json} 30 天；pipeline BatchTest 30 天；SQLite runs 行永久 |
 | 33 | **Schema drift handling** | webapp 按**列名**识别（不按列序）；未知列**静默忽略** + 日志记录；缺列渲染为破折号 + warning 日志；列 schema 升级 = 改 `WEBAPP_SCHEMA_v2` + 重新部署 |
-| 34 | **安装路径** | **`/opt/chip-project/`**（FHS 标准）；从 github.com/Guoh05/Chip_stock_info_collection_agent clone |
+| 34 | **安装路径** | **实际：`/home/admin/project/chip-project/`**（原计划 `/opt/chip-project/`，部署时改为 admin 家目录下，方便 OpenClaw / admin 用户协同访问）；从 github.com/Guoh05/Chip_stock_info_collection_agent clone |
 | 35 | **进程管理** | **systemd**：1 个 service（`chip-webapp.service` 运行 uvicorn）+ 2 个 timer（retention 每天 03:00，backup 每天 04:00） |
 | 36 | **端口** | **8000**（原计划 8080，但发现 8080 已被 OpenClaw 套件的 searxng 占用 127.0.0.1:8080 ）；业务 URL = `http://101.133.151.21:8000/` |
 | 37 | **反向代理** | **MVP 不装 nginx**；uvicorn 直接监听 8080；未来加 TLS 时再引入 nginx + Let's Encrypt |
@@ -908,3 +908,4 @@ webapp 显式传所有 flag，**不依赖 pipeline 默认值**。这是 defensiv
 | 2026-05-27 | **决策 #19 修订**：Mode A 粘贴改为**仅 newline 分隔**。原 `,`/`\|`/`;` 分隔不可行——真 MPN 中`,`（NXP `BT168GW,115`）、`-`（绝大多数）、空格（`BD18333EUV-M E2`）都会出现。Newline 是唯一零冲突分隔字符，且与 Excel 列复制粘贴的天然格式一致。补加超长单条 (>50 字符) 触发友好警告。 |
 | 2026-05-27 | **M1（本机 happy path）完成**：从内存 dict → SQLite (WAL)；`app/services/{pipeline_runner,xlsx_parser,xlsx_writer}.py`；FastAPI lifespan 启动 single worker thread；queue 串行调老 pipeline subprocess；`Path.as_posix()` 转 chip-list 路径绕开 Windows shlex 反斜杠 bug；读 `<env>/.pipeline_state.json` 反查 api/scraper batch_dir；glob 找最新 `Merge_*/`；in_stock 过滤 + 自定义排序（risk → Type → MPN → Broker → qty desc）→ `parsed.json`；生成精简 xlsx（单 sheet All_data，43 列全保留，全部行）。端到端真 pipeline 跑通：`STM32G030F6P6` 单 MPN ~44 秒（DigiKey API ok + DigiKey scraper blocked + merge ok），webapp 拿到 2 行现货数据。**已知非阻塞**：`STM32G030F6P6` 不在 `Raw_chip_list_20260523_cleaned.xlsx` 内 → Type/risk/Manufacture 列空（chip-list join 无匹配，符合 pipeline 行为）。 |
 | 2026-05-27 | **M2（本机 feature 完整）完成**（email 留到 M3）：① `app/services/mpn_cleaner.py` —— port Phase 1 6 条机械规则 + suspicious-pattern warning（中文/内部空格/过短/过长），不应用 `MANUAL_OVERRIDES`（决策 #22）。② `app/services/excel_input.py` —— `make_template_xlsx()` 生成 4 列模板 + `parse_upload()` 解析上传文件 + 智能跳过模板示例行 + `write_input_csv()`。③ /query 重构：Mode A 干净→直接 enqueue；Mode A 脏→review.html；Mode B 必走 review.html；/query/template 模板下载；/query/confirm 处理 review 提交。④ review.html：变化标黄、警告标红、并列展示 metadata；textarea 可编辑最终 MPN；强制重新跑 checkbox（决策 #18 缓存绕过）。⑤ 24h cache check（按 mpns_hash + owner_email + status=done + 24h 窗口）→ 命中 redirect 到原 run_id?cache_hit=1 + 结果页 banner。⑥ `_apply_metadata_overlay()` in pipeline_runner —— 决策 #29：用户上传的 Type/risk/Manufacture 覆盖 chip-list join 值（按 MPN_cleaned_byAgent match）。⑦ 端到端验证：Mode B 上传 `BD18333EUV-ME2`（chip-list 里 Type=Non-prescribed/risk=Middle）+ 用户值 Type=电源 IC/risk=low → parsed.json 显示 Type=电源 IC/risk=low ✅ overlay 生效。**未做（留 M3）**：邮件通知（需 Hotmail SMTP 凭证 + 模板）；history 页用 force=1 重新跑链接（review 页 checkbox 已够用）。 |
+| 2026-05-28 | **M3（上云 + Magic Link）完成**：① Magic Link auth 全栈（`app/auth.py` + `routers/auth.py` + `services/emailer.py`），SQLite 加 `magic_links`/`sessions` 表（15 min TTL token / 7 day session）。② config.py 用 `python-dotenv` 加载 `.env`（决策 #42），allowlist 派生 `AUTH_REQUIRED`，无 allowlist 时自动 dev mode 回退 `DEV_OWNER_EMAIL`。③ 云端部署：`/home/admin/project/chip-project/`（决策 #34 修订；原 `/opt/chip-project/` → admin 家目录下利于协同），Python 3.11.13（决策 #39 修订；al8 无 3.10）+ venv（621MB）+ playwright chromium+firefox（931MB），systemd `chip-webapp.service`（root，MemoryMax=2G，决策 #41）。④ 端口 **8000**（决策 #36 修订；8080 被 OpenClaw searxng 占用）。⑤ SMTP 试错：Hotmail basic auth 关停 → Gmail GFW 封锁 → 163 云 IP 信誉拒收 → **最终 Aliyun DirectMail**（`smtpdm.aliyun.com:465 SSL` + 自有域 `mail.jiahao520.com` SPF/DKIM 全配，决策 #12 修订）。⑥ `emailer.py` 按端口自动选 SSL/STARTTLS（465/587）。⑦ `pipeline_runner.py` 修 2 个 Windows ↔ Linux 兼容 bug：path 用 `Path.as_posix()` 避 shlex 吞反斜杠；orchestrator 传参用 `--key=value` 语法（`--scraper-args=--sequential`）避 argparse 拒 dash-leading value。⑧ pipeline orchestrator 第 67 行 `PYTHON = sys.executable` 跨平台修复（pipeline 窗口操作；webapp 端临时 symlink workaround 作过渡）。⑨ 端到端验证：业务真邮箱 `wlnyyaa@hotmail.com` 收到 Magic Link 邮件 + 点击登录跳 /query + 提交 `STM32G030F6P6` 得 13 行现货数据 ✅。**剩余**：M4 加固（retention cron + SQLite 备份 + Alibaba 磁盘快照）；symlink 清理待 cloud 能 `git pull` 拉到 pipeline 修复后做。 |
