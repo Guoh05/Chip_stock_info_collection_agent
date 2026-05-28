@@ -15,12 +15,11 @@
         {% if phases[key] == "running" %}[运行中]{% elif phases[key] == "ok" %}[完成]{% elif phases[key] == "failed" %}[失败]{% elif phases[key] == "skipped" %}[跳过]{% else %}[等待]{% endif %}
     </span>
 </div>
-{% if key == "scraper_main" %}
-<div id="progress-wrap" style="display:none; margin: -2px 0 8px 50px;">
-    <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
-    <div class="progress-info" id="progress-info">—</div>
+{# One progress-wrap per phase — JS shows only the one belonging to the currently-running phase. Avoids the bug where API's progress data was displayed under the scraper row. #}
+<div id="progress-wrap-{{ key }}" class="progress-wrap" style="display:none; margin: -2px 0 8px 50px;">
+    <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar-{{ key }}" style="width:0%"></div></div>
+    <div class="progress-info" id="progress-info-{{ key }}">—</div>
 </div>
-{% endif %}
 {% endfor %}
 {% endmacro %}
 
@@ -103,6 +102,8 @@ async function poll() {
         if (inQueue && queueN) queueN.textContent = data.queue_position;
 
         if (!inQueue) {
+            // Identify the currently-running phase (first one with status=running).
+            let currentPhase = null;
             for (const key of ["api", "scraper_main", "merge"]) {
                 const el = document.getElementById("phase-" + key);
                 if (!el) continue;
@@ -110,18 +111,29 @@ async function poll() {
                 el.className = "phase phase-" + st;
                 el.querySelector(".phase-icon").textContent = map[st] || "▢";
                 el.querySelector(".phase-status").textContent = labels[st] || "[等待]";
+                if (st === "running" && currentPhase === null) currentPhase = key;
             }
-            const pWrap = document.getElementById("progress-wrap");
-            const pBar = document.getElementById("progress-bar");
-            const pInfo = document.getElementById("progress-info");
-            if (data.progress && data.progress.total > 0) {
-                const pct = Math.min(100, Math.round(100 * data.progress.current / data.progress.total));
-                pWrap.style.display = "block";
-                pBar.style.width = pct + "%";
-                const mpnHint = data.progress.mpn ? " · " + data.progress.mpn : "";
-                pInfo.textContent = "正在处理 " + data.progress.current + " / " + data.progress.total + mpnHint + " (" + pct + "%)";
-            } else {
-                pWrap.style.display = "none";
+            // Hide all progress bars first; then show the one for the running phase.
+            for (const key of ["api", "scraper_main", "merge"]) {
+                const w = document.getElementById("progress-wrap-" + key);
+                if (w) w.style.display = "none";
+            }
+            if (currentPhase && data.progress && data.progress.total > 0) {
+                // [k/N] in pipeline.log means "starting chip k of N" — so completed
+                // count is k-1, not k. Otherwise the bar shows 100% while the last
+                // chip is still running, which is misleading.
+                const total = data.progress.total;
+                const completed = Math.max(0, data.progress.current - 1);
+                const pct = Math.round(100 * completed / total);
+                const pWrap = document.getElementById("progress-wrap-" + currentPhase);
+                const pBar = document.getElementById("progress-bar-" + currentPhase);
+                const pInfo = document.getElementById("progress-info-" + currentPhase);
+                if (pWrap) pWrap.style.display = "block";
+                if (pBar) pBar.style.width = pct + "%";
+                if (pInfo) {
+                    const mpnHint = data.progress.mpn ? " · " + data.progress.mpn : "";
+                    pInfo.textContent = "已完成 " + completed + " / " + total + " (" + pct + "%) · 正在处理" + mpnHint;
+                }
             }
         }
 
