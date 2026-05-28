@@ -16,6 +16,7 @@ from ..auth import require_user_or_redirect
 from ..config import PROJECT_ROOT, RUNS_DIR, TEMPLATES_DIR, PIPELINE_ENV
 from ..schemas import HIGHLIGHT_COLUMNS, WEBAPP_SCHEMA_v1, render_cell
 from ..services.progress import read_progress
+from ..services.pipeline_runner import cancel_run
 
 # Decisions #6 + UX: estimate ~5 min per MPN (scraper-dominated, --sequential
 # over 9 sources). Used to show "预计 N 分钟" hint on the run page.
@@ -62,6 +63,8 @@ def _phases_for_terminal_run(run_id: str, overall: str) -> dict:
         return {"api": "ok", "scraper_main": "ok", "merge": "ok"}
     if overall == "failed":
         return {"api": "pending", "scraper_main": "failed", "merge": "skipped"}
+    if overall == "cancelled":
+        return {"api": "pending", "scraper_main": "pending", "merge": "pending"}
     return {"api": "pending", "scraper_main": "pending", "merge": "pending"}
 
 
@@ -149,6 +152,26 @@ async def run_status(request: Request, run_id: str):
         "queue_position": qpos,
         "progress": progress,
     })
+
+
+@router.post("/r/{run_id}/cancel")
+async def cancel(request: Request, run_id: str):
+    """User clicked 中断查询 on the run page."""
+    email, redirect = require_user_or_redirect(request)
+    if redirect:
+        return JSONResponse({"error": "auth required"}, status_code=401)
+    run = storage.get_run(run_id)
+    if not run:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    if run["owner_email"] != email:
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    if run["status"] not in ("queued", "running"):
+        return JSONResponse({
+            "ok": False,
+            "reason": f"run already {run['status']}, nothing to cancel",
+        })
+    actioned = cancel_run(run_id)
+    return JSONResponse({"ok": True, "actioned": actioned})
 
 
 @router.get("/r/{run_id}/download")

@@ -176,6 +176,20 @@ def mark_failed(run_id: str, error_text: str) -> None:
     c.commit()
 
 
+def mark_cancelled(run_id: str) -> bool:
+    """User-initiated cancel. Only acts on queued/running runs (idempotent
+    no-op otherwise so double-click on the cancel button doesn't clobber a
+    terminal status). Returns True if the row was actually flipped."""
+    c = _conn()
+    cur = c.execute(
+        """UPDATE runs SET status='cancelled', finished_at=?
+           WHERE run_id=? AND status IN ('queued','running')""",
+        (datetime.now().isoformat(timespec="seconds"), run_id),
+    )
+    c.commit()
+    return cur.rowcount > 0
+
+
 # ---------- Magic Link / Sessions (decision #10) ----------
 
 def new_magic_link(token: str, email: str, ttl_minutes: int) -> None:

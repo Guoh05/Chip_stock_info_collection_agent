@@ -78,6 +78,15 @@ a.disabled { color: #999; pointer-events: none; }
 .error-box { background: #FFE0E0; border: 1px solid #C00000; padding: 16px; border-radius: 4px; margin: 16px 0; }
 .error-box h3 { color: #C00000; margin-top: 0; }
 
+/* run page — cancelled box (user-initiated, distinct from error/failure) */
+.cancelled-box { background: #FFF4D6; border: 1px solid #E68A00; padding: 16px; border-radius: 4px; margin: 16px 0; }
+.cancelled-box h3 { color: #E68A00; margin-top: 0; }
+
+/* danger button — used by 中断查询 */
+.danger-btn { background: #C00000; color: #fff; border: none; padding: 8px 18px; font-size: 14px; border-radius: 3px; cursor: pointer; }
+.danger-btn:hover { background: #A00000; }
+.danger-btn:disabled { background: #999; cursor: not-allowed; }
+
 /* result table — visual sync with xlsx */
 .table-wrap { overflow-x: auto; margin: 16px 0; }
 .result-table { border-collapse: collapse; width: 100%; font-size: 13px; }

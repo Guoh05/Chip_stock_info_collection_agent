@@ -48,6 +48,42 @@
 <p class="muted">完成后页面会自动刷新并发邮件通知。</p>
 <p class="muted">查看 pipeline 实时日志：<code>webapp/runs/{{ run.run_id }}/pipeline.log</code></p>
 
+<div style="margin-top:24px; padding-top:16px; border-top:1px solid #eee;">
+    <button type="button" id="cancel-btn" class="danger-btn" onclick="cancelRun()">
+        ⛔ 中断查询
+    </button>
+    <span class="muted" style="margin-left:12px; font-size:13px;">
+        ⚠ 点击后会立即停止所有正在运行的进程，<strong>无法恢复</strong>。
+        如需重新查询，请到 <a href="/query">新查询</a> 页面重新提交。
+    </span>
+</div>
+
+<script>
+async function cancelRun() {
+    if (!confirm("确认要中断本次查询吗？\n\n所有正在运行的进程会立即停止，无法恢复。\n如需重新查询，需要回到主页重新提交。")) {
+        return;
+    }
+    const btn = document.getElementById("cancel-btn");
+    btn.disabled = true;
+    btn.textContent = "正在中断…";
+    try {
+        const r = await fetch("/r/{{ run.run_id }}/cancel", {method: "POST"});
+        if (!r.ok) {
+            alert("中断失败：HTTP " + r.status);
+            btn.disabled = false;
+            btn.textContent = "⛔ 中断查询";
+            return;
+        }
+        // Let poll() pick up status=cancelled and reload, or force reload now.
+        setTimeout(() => location.reload(), 800);
+    } catch (e) {
+        alert("中断失败：" + e);
+        btn.disabled = false;
+        btn.textContent = "⛔ 中断查询";
+    }
+}
+</script>
+
 <script>
 async function poll() {
     try {
@@ -89,7 +125,8 @@ async function poll() {
             }
         }
 
-        if (data.status === "done" || data.status === "failed" || data.status === "done_empty") {
+        if (data.status === "done" || data.status === "failed"
+            || data.status === "done_empty" || data.status === "cancelled") {
             location.reload();
         } else {
             setTimeout(poll, 2000);
@@ -183,6 +220,22 @@ setTimeout(poll, 2000);
     {% endif %}
     <p class="muted">完整日志：<code>webapp/runs/{{ run.run_id }}/pipeline.log</code></p>
 </div>
+<a href="/query" class="button primary">新查询</a>
+
+{% elif overall_status == "cancelled" %}
+<h1>查询已中断</h1>
+<p class="run-meta">run_id: <code>{{ run.run_id }}</code></p>
+
+<div class="cancelled-box">
+    <h3>⊝ 你在运行中主动中断了此次查询</h3>
+    <p>所有相关进程已停止；本次查询无任何结果输出。如需查询，请到 <a href="/query">新查询</a> 页面重新提交（不支持从中断处恢复）。</p>
+</div>
+
+<div class="phases" style="margin-top:24px;">
+    {{ phase_block(phases, ["api", "scraper_main", "merge"]) }}
+</div>
+<p class="muted">以上是中断时各阶段的状态快照。</p>
+
 <a href="/query" class="button primary">新查询</a>
 
 {% endif %}

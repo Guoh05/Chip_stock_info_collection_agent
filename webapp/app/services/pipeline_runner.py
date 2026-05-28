@@ -27,6 +27,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import psutil  # cross-platform process-tree kill for user cancel
+
 from .. import storage
 from ..config import (
     PIPELINE_PYTHON,
@@ -47,9 +49,60 @@ _WORK_QUEUE: queue.Queue[str] = queue.Queue()
 _worker_started = False
 _worker_lock = threading.Lock()
 
+# Live-process registry for user-initiated cancel. Worker thread populates;
+# cancel_run() reads from the HTTP request thread. Dict ops under GIL are
+# thread-safe enough for get/pop, but we still wrap mutations in a lock to
+# avoid the small race window where worker has popped but the dict transition
+# isn't visible yet.
+_RUNNING: dict[str, subprocess.Popen] = {}
+_CANCEL_EVENTS: dict[str, threading.Event] = {}
+_RUNNING_LOCK = threading.Lock()
+
 
 def enqueue(run_id: str) -> None:
     _WORK_QUEUE.put(run_id)
+
+
+def cancel_run(run_id: str) -> bool:
+    """User clicked 中断查询. Flip DB → cancelled (idempotent — no-op if the
+    run is already in a terminal state) and kill the subprocess tree if one
+    is alive. Returns True when the cancel was actionable."""
+    flipped = storage.mark_cancelled(run_id)
+    if not flipped:
+        return False
+    with _RUNNING_LOCK:
+        proc = _RUNNING.get(run_id)
+        evt = _CANCEL_EVENTS.get(run_id)
+    if evt is not None:
+        evt.set()
+    if proc is not None and proc.poll() is None:
+        log.info("%s: user cancel — killing process tree (pid=%s)", run_id, proc.pid)
+        _kill_process_tree(proc.pid)
+    else:
+        log.info("%s: user cancel — no live process (queued or already exited)", run_id)
+    return True
+
+
+def _kill_process_tree(pid: int) -> None:
+    """Terminate then SIGKILL the process and every descendant. psutil handles
+    Linux + Windows uniformly, and copes with ephemeral PIDs better than
+    os.killpg / taskkill /T (no race on PID reuse, no orphaned chromium)."""
+    try:
+        parent = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        return
+    procs = parent.children(recursive=True) + [parent]
+    for p in procs:
+        try:
+            p.terminate()
+        except psutil.NoSuchProcess:
+            pass
+    gone, alive = psutil.wait_procs(procs, timeout=3)
+    for p in alive:
+        try:
+            p.kill()
+        except psutil.NoSuchProcess:
+            pass
 
 
 def start_worker() -> None:
@@ -68,6 +121,12 @@ def _worker_loop() -> None:
     while True:
         run_id = _WORK_QUEUE.get()
         try:
+            # User may have cancelled while this run was still queued — in
+            # which case status is already 'cancelled'; skip the pipeline.
+            run = storage.get_run(run_id)
+            if run and run["status"] == "cancelled":
+                log.info("%s: pre-cancelled in queue — skipping pipeline run", run_id)
+                continue
             _process(run_id)
         except Exception as e:  # noqa: BLE001 — last-line safety net
             log.exception("worker exception on %s", run_id)
@@ -81,10 +140,14 @@ def _worker_loop() -> None:
 
 
 def _notify(run_id: str) -> None:
-    """Send completion email to the run's owner. Best-effort — never raises."""
+    """Send completion email to the run's owner. Best-effort — never raises.
+    Skips email when the user cancelled the run themselves (they don't need
+    a reminder of an action they just took)."""
     try:
         run = storage.get_run(run_id)
         if not run:
+            return
+        if run["status"] == "cancelled":
             return
         view_url = f"{WEBAPP_BASE_URL.rstrip('/')}/r/{run_id}"
         phases = _read_phase_snapshot(run_id)
@@ -182,39 +245,103 @@ def _process(run_id: str) -> None:
     child_env = os.environ.copy()
     child_env["PYTHONUNBUFFERED"] = "1"
 
-    with log_path.open("w", encoding="utf-8") as logf:
-        logf.write(f"# Command: {' '.join(shlex.quote(c) for c in cmd)}\n")
-        logf.write(f"# Started: {datetime.now().isoformat()}\n")
-        logf.write(f"# cwd: {PROJECT_ROOT}\n\n")
-        logf.flush()
-        try:
-            result = subprocess.run(
-                cmd,
-                cwd=str(PROJECT_ROOT),
-                stdout=logf,
-                stderr=subprocess.STDOUT,
-                check=False,
-                timeout=PIPELINE_TIMEOUT_SECONDS,
-                env=child_env,
-            )
-        except subprocess.TimeoutExpired:
-            logf.write(f"\n# TIMEOUT after {PIPELINE_TIMEOUT_SECONDS // 3600}h — pipeline killed\n")
-            log.error("%s: pipeline timed out after %dh", run_id, PIPELINE_TIMEOUT_SECONDS // 3600)
-            storage.mark_failed(
-                run_id,
-                f"Pipeline 超过 {PIPELINE_TIMEOUT_SECONDS // 3600} 小时未完成（兜底超时）。"
-                f"如果 MPN 数量很大，请联系管理员评估是否需要拆批跑。"
-                f"完整日志：webapp/runs/{run_id}/pipeline.log",
-            )
-            return
+    # Popen + poll loop instead of subprocess.run(timeout=...) so cancel_run()
+    # can interrupt mid-pipeline. We register the Popen + a cancel Event in
+    # the module-level dicts; cancel_run sets the event + kills the tree.
+    cancel_event = threading.Event()
+    with _RUNNING_LOCK:
+        _CANCEL_EVENTS[run_id] = cancel_event
 
-    log.info("%s: pipeline exited rc=%s", run_id, result.returncode)
+    cancelled = False
+    timed_out = False
+    rc: int | None = None
+    try:
+        with log_path.open("w", encoding="utf-8") as logf:
+            logf.write(f"# Command: {' '.join(shlex.quote(c) for c in cmd)}\n")
+            logf.write(f"# Started: {datetime.now().isoformat()}\n")
+            logf.write(f"# cwd: {PROJECT_ROOT}\n\n")
+            logf.flush()
+            # start_new_session (POSIX) / CREATE_NEW_PROCESS_GROUP (Windows):
+            # gives the children their own session/group so a stray signal to
+            # webapp doesn't take them down — we manage their lifetime via the
+            # registered Popen handle + _kill_process_tree on cancel/timeout.
+            popen_kwargs = {
+                "cwd": str(PROJECT_ROOT),
+                "stdout": logf,
+                "stderr": subprocess.STDOUT,
+                "env": child_env,
+            }
+            if os.name == "nt":
+                popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                popen_kwargs["start_new_session"] = True
+
+            proc = subprocess.Popen(cmd, **popen_kwargs)
+            with _RUNNING_LOCK:
+                _RUNNING[run_id] = proc
+
+            deadline = time.time() + PIPELINE_TIMEOUT_SECONDS
+            try:
+                while True:
+                    try:
+                        rc = proc.wait(timeout=0.5)
+                        break
+                    except subprocess.TimeoutExpired:
+                        if cancel_event.is_set():
+                            cancelled = True
+                            _kill_process_tree(proc.pid)
+                            try:
+                                proc.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                pass
+                            logf.write("\n# CANCELLED by user — pipeline killed\n")
+                            break
+                        if time.time() > deadline:
+                            timed_out = True
+                            _kill_process_tree(proc.pid)
+                            try:
+                                proc.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                pass
+                            logf.write(f"\n# TIMEOUT after {PIPELINE_TIMEOUT_SECONDS // 3600}h — pipeline killed\n")
+                            break
+            finally:
+                with _RUNNING_LOCK:
+                    _RUNNING.pop(run_id, None)
+    finally:
+        with _RUNNING_LOCK:
+            _CANCEL_EVENTS.pop(run_id, None)
+
+    if cancelled:
+        log.info("%s: pipeline cancelled by user", run_id)
+        # status is already 'cancelled' (set by cancel_run before kill).
+        # Snapshot whatever phase state existed at cancel time so the result
+        # page can show where the user interrupted.
+        try:
+            state_path = _env_root() / ".pipeline_state.json"
+            if state_path.exists():
+                shutil.copy2(state_path, run_dir / "state_snapshot.json")
+        except Exception:
+            log.exception("snapshot during cancel failed")
+        return
+
+    if timed_out:
+        log.error("%s: pipeline timed out after %dh", run_id, PIPELINE_TIMEOUT_SECONDS // 3600)
+        storage.mark_failed(
+            run_id,
+            f"Pipeline 超过 {PIPELINE_TIMEOUT_SECONDS // 3600} 小时未完成（兜底超时）。"
+            f"如果 MPN 数量很大，请联系管理员评估是否需要拆批跑。"
+            f"完整日志：webapp/runs/{run_id}/pipeline.log",
+        )
+        return
+
+    log.info("%s: pipeline exited rc=%s", run_id, rc)
 
     # Step 4: read state file
     env_root = _env_root()
     state_path = env_root / ".pipeline_state.json"
     if not state_path.exists():
-        storage.mark_failed(run_id, f"No state file at {state_path} after pipeline exit (rc={result.returncode})")
+        storage.mark_failed(run_id, f"No state file at {state_path} after pipeline exit (rc={rc})")
         return
 
     try:
@@ -231,11 +358,11 @@ def _process(run_id: str) -> None:
     scraper_batch = (phases.get("scraper_main") or {}).get("batch_dir")
     merge_status = (phases.get("merge") or {}).get("status")
 
-    if result.returncode != 0 or merge_status != "ok":
+    if rc != 0 or merge_status != "ok":
         last_lines = _tail_log(log_path, 50)
         storage.mark_failed(
             run_id,
-            f"Pipeline exit rc={result.returncode}; merge phase status={merge_status}. "
+            f"Pipeline exit rc={rc}; merge phase status={merge_status}. "
             f"Last log lines:\n{last_lines}",
         )
         return

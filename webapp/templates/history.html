@@ -30,6 +30,7 @@
                 {% elif r.display_status == "done_empty" %}<span class="status-ok">✅ Done (无现货)</span>
                 {% elif r.display_status == "failed" %}<span class="status-fail">❌ Failed</span>
                 {% elif r.display_status == "running" %}<span class="status-running">🔄 Running</span>
+                {% elif r.display_status == "cancelled" %}<span class="status-running" style="color:#888;">⊝ 已中断</span>
                 {% else %}<span>{{ r.display_status }}</span>
                 {% endif %}
             </td>

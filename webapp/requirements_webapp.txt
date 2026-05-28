@@ -10,3 +10,6 @@ email-validator==2.2.0          # validate user emails
 
 # Pipeline output parsing (already in pipeline requirements but listed for clarity)
 openpyxl>=3.1.5
+
+# Cross-platform process-tree kill for the "中断查询" feature
+psutil>=5.9
