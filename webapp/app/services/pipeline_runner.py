@@ -17,6 +17,7 @@ Per-run flow (mirrors §3.2 T2-T4 in planning.md):
 from __future__ import annotations
 import json
 import logging
+import os
 import queue
 import shlex
 import shutil
@@ -167,12 +168,20 @@ def _process(run_id: str) -> None:
     log.info("%s: cmd = %s", run_id, " ".join(shlex.quote(c) for c in cmd))
 
     pipeline_start_ts = time.time()
-    # 6h safety net — covers ~70 MPN × 5 min/MPN + buffer. >70 MPN runs may hit
-    # this and get an actionable error pointing the user to split the batch up.
-    # in minutes; this only fires when pipeline truly hangs (playwright dead
-    # element wait, network deadlock, etc.) — otherwise we'd loop forever and
-    # block the single worker queue indefinitely.
+    # 6h safety net — covers ~70 MPN × 5 min/MPN + buffer. Larger batches may
+    # trip this and get an actionable error pointing the user to split up.
+    # Also covers true hangs (playwright dead element wait, network deadlock).
     PIPELINE_TIMEOUT_SECONDS = 6 * 3600
+
+    # PYTHONUNBUFFERED=1 — when Python's stdout is a file (not a tty) it block-
+    # buffers (~8 KB), so scraper's sparse "[N/M] MPN" progress prints sit in
+    # buffer for minutes until the child exits. That made the run page show
+    # "no progress" for the entire scraper phase. Setting this env var
+    # propagates to all grand/child Python processes (run_pipeline →
+    # batch_*_test.py) and forces line buffering.
+    child_env = os.environ.copy()
+    child_env["PYTHONUNBUFFERED"] = "1"
+
     with log_path.open("w", encoding="utf-8") as logf:
         logf.write(f"# Command: {' '.join(shlex.quote(c) for c in cmd)}\n")
         logf.write(f"# Started: {datetime.now().isoformat()}\n")
@@ -186,6 +195,7 @@ def _process(run_id: str) -> None:
                 stderr=subprocess.STDOUT,
                 check=False,
                 timeout=PIPELINE_TIMEOUT_SECONDS,
+                env=child_env,
             )
         except subprocess.TimeoutExpired:
             logf.write(f"\n# TIMEOUT after {PIPELINE_TIMEOUT_SECONDS // 3600}h — pipeline killed\n")
