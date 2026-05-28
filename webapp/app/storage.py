@@ -251,6 +251,24 @@ def revoke_session(session_id: str) -> None:
     c.commit()
 
 
+def queue_position(run_id: str) -> int:
+    """Count active runs (queued/running) submitted before this one.
+
+    Returns 0 if this run is currently being processed (i.e. it IS the head of
+    the queue) or no longer active. Used by the run page to tell waiting users
+    how many jobs are ahead of them, vs showing misleading phase progress
+    from another user's currently-running pipeline.
+    """
+    c = _conn()
+    row = c.execute(
+        """SELECT COUNT(*) FROM runs
+           WHERE status IN ('queued','running')
+             AND submitted_at < (SELECT submitted_at FROM runs WHERE run_id=?)""",
+        (run_id,),
+    ).fetchone()
+    return row[0] if row else 0
+
+
 def find_cached_run(mpns_hash: str, hours: int = 24) -> dict | None:
     """Decision #18 Option (a): same hash, status=done, within last N hours."""
     c = _conn()

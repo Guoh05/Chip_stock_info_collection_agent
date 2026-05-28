@@ -71,6 +71,9 @@ async def run_page(request: Request, run_id: str, cache_hit: int = 0):
         "api": "ok", "scraper_main": "failed", "merge": "skipped"
     } if overall == "failed" else {"api": "pending", "scraper_main": "pending", "merge": "pending"}
 
+    # Queue position: only meaningful for status=queued (others are 0/irrelevant)
+    qpos = storage.queue_position(run_id) if overall == "queued" else 0
+
     return templates.TemplateResponse(
         "run.html",
         {
@@ -78,6 +81,7 @@ async def run_page(request: Request, run_id: str, cache_hit: int = 0):
             "run": run,
             "overall_status": overall,
             "phases": phases,
+            "queue_position": qpos,
             "results": results,
             "show_empty": overall == "done_empty",
             "schema": WEBAPP_SCHEMA_v1,
@@ -105,7 +109,8 @@ async def run_status(request: Request, run_id: str):
     } if overall in ("done", "done_empty") else {
         "api": "ok", "scraper_main": "failed", "merge": "skipped"
     } if overall == "failed" else {"api": "pending", "scraper_main": "pending", "merge": "pending"}
-    return JSONResponse({"status": overall, "phases": phases})
+    qpos = storage.queue_position(run_id) if overall == "queued" else 0
+    return JSONResponse({"status": overall, "phases": phases, "queue_position": qpos})
 
 
 @router.get("/r/{run_id}/download")

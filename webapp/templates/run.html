@@ -8,7 +8,13 @@
     run_id: <code>{{ run.run_id }}</code> · 提交了 {{ run.mpns|length }} 个 MPN
 </p>
 
-<div class="phases">
+<div id="queue-box" class="freshness-hint" style="display:{{ 'block' if queue_position > 0 else 'none' }};
+     background:#FFF4D6; border-left-color:#E68A00;">
+    <strong>排队中</strong> —— 前面还有 <strong id="queue-n">{{ queue_position }}</strong> 个查询任务在跑。
+    单 worker 串行执行，本查询会在前面任务完成后自动启动；本页无需刷新。
+</div>
+
+<div id="phases-box" class="phases" style="display:{{ 'none' if queue_position > 0 else 'block' }};">
     {% set phase_labels = {"api": "Phase 1: API sweep", "scraper_main": "Phase 2: Web scraper", "merge": "Phase 3: 合并结果"} %}
     {% for key in ["api", "scraper_main", "merge"] %}
     <div class="phase phase-{{ phases[key] }}" id="phase-{{ key }}">
@@ -33,14 +39,28 @@ async function poll() {
         const data = await r.json();
         const map = {pending: "▢", running: "▣", ok: "✅", failed: "❌", skipped: "⊝"};
         const labels = {pending: "[等待]", running: "[运行中]", ok: "[完成]", failed: "[失败]", skipped: "[跳过]"};
-        for (const key of ["api", "scraper_main", "merge"]) {
-            const el = document.getElementById("phase-" + key);
-            if (!el) continue;
-            const st = data.phases[key] || "pending";
-            el.className = "phase phase-" + st;
-            el.querySelector(".phase-icon").textContent = map[st] || "▢";
-            el.querySelector(".phase-status").textContent = labels[st] || "[等待]";
+
+        // Queue position handling: hide phases box, show queue box.
+        const queueBox = document.getElementById("queue-box");
+        const phasesBox = document.getElementById("phases-box");
+        const queueN = document.getElementById("queue-n");
+        const inQueue = (data.queue_position || 0) > 0 && data.status === "queued";
+        if (queueBox)  queueBox.style.display  = inQueue ? "block" : "none";
+        if (phasesBox) phasesBox.style.display = inQueue ? "none"  : "block";
+        if (inQueue && queueN) queueN.textContent = data.queue_position;
+
+        // Update phase bars (only meaningful when not in queue)
+        if (!inQueue) {
+            for (const key of ["api", "scraper_main", "merge"]) {
+                const el = document.getElementById("phase-" + key);
+                if (!el) continue;
+                const st = data.phases[key] || "pending";
+                el.className = "phase phase-" + st;
+                el.querySelector(".phase-icon").textContent = map[st] || "▢";
+                el.querySelector(".phase-status").textContent = labels[st] || "[等待]";
+            }
         }
+
         if (data.status === "done" || data.status === "failed" || data.status === "done_empty") {
             location.reload();
         } else {
