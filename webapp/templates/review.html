@@ -7,6 +7,14 @@
 {% set unchanged_count = results|length - changed_count - warn_count %}
 
 <h1>清洗预览</h1>
+
+{% if dedup_dropped and dedup_dropped > 0 %}
+<div class="freshness-hint" style="background:#FFF4D6;border-left-color:#E68A00;">
+    🔁 {% if mode == "upload" %}上传 Excel{% else %}粘贴{% endif %} 共 <strong>{{ raw_row_count }}</strong> 行 →
+    去重后 <strong>{{ results|length }}</strong> 个唯一 MPN（已自动去除 <strong>{{ dedup_dropped }}</strong> 个重复，保留首次出现）。
+</div>
+{% endif %}
+
 <p class="run-meta">
     共 <strong>{{ results|length }}</strong> 个 MPN：
     <span class="status-ok">{{ unchanged_count }} 个原样</span> ·

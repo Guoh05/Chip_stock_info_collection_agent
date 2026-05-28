@@ -62,23 +62,23 @@ def _gc_pending() -> None:
         _PENDING.pop(k, None)
 
 
-def _parse_paste(text: str) -> tuple[list[str] | None, str | None]:
-    """Return (mpns, error_msg). On error, mpns is None."""
-    raw = _SPLIT_RE.split(text)
+def _parse_paste(text: str) -> tuple[list[str] | None, str | None, int]:
+    """Return (deduped_mpns, error_msg, raw_row_count). On error, mpns is None."""
+    raw = [m.strip() for m in _SPLIT_RE.split(text)]
+    raw_nonempty = [m for m in raw if m]
     mpns: list[str] = []
-    for m in raw:
-        m = m.strip()
-        if m and m not in mpns:
+    for m in raw_nonempty:
+        if m not in mpns:
             mpns.append(m)
     if not mpns:
-        return None, "请先粘贴 MPN 列表（每行一个）"
+        return None, "请先粘贴 MPN 列表（每行一个）", 0
     suspicious = [m for m in mpns if len(m) > _SUSPICIOUS_LEN]
     if suspicious:
         return None, (
             f"检测到 1 个超长 MPN（{len(suspicious[0])} 字符）。MPN 通常 ≤30 字符。"
             "如果你粘贴的是逗号/分号分隔的列表，请改成一行一个 MPN 再提交。"
-        )
-    return mpns, None
+        ), len(raw_nonempty)
+    return mpns, None, len(raw_nonempty)
 
 
 @router.get("/query")
@@ -115,9 +115,10 @@ async def submit_query(
     if redirect:
         return redirect
     metadata: list[dict] | None = None
+    raw_row_count = 0  # tracks how many MPN-bearing rows the user submitted, pre-dedup
 
     if mode == "paste":
-        mpns, err = _parse_paste(mpns_text)
+        mpns, err, raw_row_count = _parse_paste(mpns_text)
         if err:
             return templates.TemplateResponse(
                 "query.html",
@@ -139,7 +140,7 @@ async def submit_query(
             )
         content = await upload.read()
         try:
-            mpns, metadata = parse_upload(content)
+            mpns, metadata, raw_row_count = parse_upload(content)
         except ExcelParseError as e:
             return templates.TemplateResponse(
                 "query.html",
@@ -151,6 +152,8 @@ async def submit_query(
             "query.html", {"request": request, "error": f"未知模式 {mode!r}"},
             status_code=400,
         )
+
+    dedup_dropped = max(0, raw_row_count - len(mpns))
 
     # Run mechanical cleaner (decision #22)
     clean_results, has_changes = clean_batch(mpns)
@@ -169,6 +172,8 @@ async def submit_query(
                 "metadata": metadata,
                 "token": token,
                 "mode": mode,
+                "raw_row_count": raw_row_count,
+                "dedup_dropped": dedup_dropped,
             },
         )
 

@@ -67,12 +67,15 @@ class ExcelParseError(ValueError):
     pass
 
 
-def parse_upload(file_bytes: bytes) -> tuple[list[str], list[dict]]:
-    """Parse an uploaded xlsx → (mpns_for_pipeline, metadata_records).
+def parse_upload(file_bytes: bytes) -> tuple[list[str], list[dict], int]:
+    """Parse an uploaded xlsx → (mpns_for_pipeline, metadata_records, raw_row_count).
 
-    mpns_for_pipeline: list of MPN strings (raw, will be cleaned by mpn_cleaner)
-    metadata_records: list of {Manufacture Part Number, Manufacture, Type, risk}
-                     (one per row; for join in T4 per decision #29)
+    mpns_for_pipeline: list of MPN strings, deduplicated (first occurrence kept).
+                       Will be further normalised by mpn_cleaner.
+    metadata_records:  list of {Manufacture Part Number, Manufacture, Type, risk},
+                       one per dedup'd MPN; for join in T4 per decision #29.
+    raw_row_count:     number of MPN-bearing rows in the upload BEFORE dedup
+                       (so the review page can show "uploaded N rows → M unique").
 
     Raises ExcelParseError on malformed input.
     """
@@ -104,6 +107,7 @@ def parse_upload(file_bytes: bytes) -> tuple[list[str], list[dict]]:
     mpns: list[str] = []
     seen_mpns: set[str] = set()
     metadata: list[dict] = []
+    raw_row_count = 0
 
     for row_num, row in enumerate(rows_iter, start=2):
         if row is None or all(c is None for c in row):
@@ -116,7 +120,6 @@ def parse_upload(file_bytes: bytes) -> tuple[list[str], list[dict]]:
             continue
         # Skip sample row from template
         if mpn == "STM32G030F6P6" and row_num == 2:
-            # Could be the template sample — only skip if the entire row matches
             sample_match = True
             for sample_idx, sample_val in enumerate(TEMPLATE_SAMPLE_ROW):
                 col = ALL_COLS[sample_idx]
@@ -128,6 +131,7 @@ def parse_upload(file_bytes: bytes) -> tuple[list[str], list[dict]]:
             if sample_match:
                 continue
 
+        raw_row_count += 1
         if mpn in seen_mpns:
             continue
         seen_mpns.add(mpn)
@@ -145,7 +149,7 @@ def parse_upload(file_bytes: bytes) -> tuple[list[str], list[dict]]:
     if not mpns:
         raise ExcelParseError("xlsx 里没有任何 MPN 数据（除了示例行）")
 
-    return mpns, metadata
+    return mpns, metadata, raw_row_count
 
 
 def write_input_csv(metadata: list[dict], out_path: Path) -> None:
