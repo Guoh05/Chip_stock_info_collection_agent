@@ -15,6 +15,11 @@ from .. import storage
 from ..auth import require_user_or_redirect
 from ..config import PROJECT_ROOT, RUNS_DIR, TEMPLATES_DIR, PIPELINE_ENV
 from ..schemas import HIGHLIGHT_COLUMNS, WEBAPP_SCHEMA_v1, render_cell
+from ..services.progress import read_progress
+
+# Decisions #6 + UX: estimate ~3 min per MPN (scraper-dominated, --sequential
+# over 9 sources). Used to show "预计 N 分钟" hint on the run page.
+SECONDS_PER_MPN_ESTIMATE = 180
 
 log = logging.getLogger("webapp.runs")
 router = APIRouter()
@@ -26,13 +31,12 @@ def _env_root() -> Path:
     return PROJECT_ROOT / ("test" if PIPELINE_ENV == "test" else "production")
 
 
-def _phase_status_from_pipeline() -> dict:
-    """Read pipeline's .pipeline_state.json to surface live phase progress."""
-    state_path = _env_root() / ".pipeline_state.json"
-    if not state_path.exists():
+def _phases_from_state_file(path: Path) -> dict:
+    """Read a pipeline state json (live or snapshot) → 3-phase dict."""
+    if not path.exists():
         return {"api": "pending", "scraper_main": "pending", "merge": "pending"}
     try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state = json.loads(path.read_text(encoding="utf-8"))
         phases = state.get("phases", {})
         return {
             "api": (phases.get("api") or {}).get("status", "pending"),
@@ -41,6 +45,24 @@ def _phase_status_from_pipeline() -> dict:
         }
     except Exception:
         return {"api": "pending", "scraper_main": "pending", "merge": "pending"}
+
+
+def _phase_status_from_pipeline() -> dict:
+    """Read pipeline's live .pipeline_state.json for the currently running run."""
+    return _phases_from_state_file(_env_root() / ".pipeline_state.json")
+
+
+def _phases_for_terminal_run(run_id: str, overall: str) -> dict:
+    """Snapshot path (frozen at pipeline exit) → real per-phase status. Falls
+    back to coarse heuristic when no snapshot exists (e.g. pre-state-file failure)."""
+    snap = RUNS_DIR / run_id / "state_snapshot.json"
+    if snap.exists():
+        return _phases_from_state_file(snap)
+    if overall in ("done", "done_empty"):
+        return {"api": "ok", "scraper_main": "ok", "merge": "ok"}
+    if overall == "failed":
+        return {"api": "pending", "scraper_main": "failed", "merge": "skipped"}
+    return {"api": "pending", "scraper_main": "pending", "merge": "pending"}
 
 
 @router.get("/r/{run_id}")
@@ -64,15 +86,15 @@ async def run_page(request: Request, run_id: str, cache_hit: int = 0):
             except Exception:
                 log.exception("parsed.json read failed for %s", run_id)
 
-    # If running, expose live phase status; otherwise leave defaults.
-    phases = _phase_status_from_pipeline() if overall in ("queued", "running") else {
-        "api": "ok", "scraper_main": "ok", "merge": "ok"
-    } if overall in ("done", "done_empty") else {
-        "api": "ok", "scraper_main": "failed", "merge": "skipped"
-    } if overall == "failed" else {"api": "pending", "scraper_main": "pending", "merge": "pending"}
+    phases = (
+        _phase_status_from_pipeline() if overall in ("queued", "running")
+        else _phases_for_terminal_run(run_id, overall)
+    )
 
-    # Queue position: only meaningful for status=queued (others are 0/irrelevant)
     qpos = storage.queue_position(run_id) if overall == "queued" else 0
+
+    n_mpns = len(run.get("mpns") or [])
+    estimated_minutes = max(1, (n_mpns * SECONDS_PER_MPN_ESTIMATE + 59) // 60)
 
     return templates.TemplateResponse(
         "run.html",
@@ -88,6 +110,8 @@ async def run_page(request: Request, run_id: str, cache_hit: int = 0):
             "highlight": HIGHLIGHT_COLUMNS,
             "error_text": run.get("error_text"),
             "cache_hit": bool(cache_hit),
+            "estimated_minutes": estimated_minutes,
+            "n_mpns": n_mpns,
         },
     )
 
@@ -104,13 +128,18 @@ async def run_status(request: Request, run_id: str):
     if run["owner_email"] != email:
         return JSONResponse({"error": "forbidden"}, status_code=403)
     overall = run["status"]
-    phases = _phase_status_from_pipeline() if overall in ("queued", "running") else {
-        "api": "ok", "scraper_main": "ok", "merge": "ok"
-    } if overall in ("done", "done_empty") else {
-        "api": "ok", "scraper_main": "failed", "merge": "skipped"
-    } if overall == "failed" else {"api": "pending", "scraper_main": "pending", "merge": "pending"}
+    phases = (
+        _phase_status_from_pipeline() if overall in ("queued", "running")
+        else _phases_for_terminal_run(run_id, overall)
+    )
     qpos = storage.queue_position(run_id) if overall == "queued" else 0
-    return JSONResponse({"status": overall, "phases": phases, "queue_position": qpos})
+    progress = read_progress(RUNS_DIR / run_id / "pipeline.log") if overall == "running" else None
+    return JSONResponse({
+        "status": overall,
+        "phases": phases,
+        "queue_position": qpos,
+        "progress": progress,
+    })
 
 
 @router.get("/r/{run_id}/download")

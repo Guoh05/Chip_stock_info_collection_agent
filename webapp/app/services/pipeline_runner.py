@@ -86,6 +86,7 @@ def _notify(run_id: str) -> None:
         if not run:
             return
         view_url = f"{WEBAPP_BASE_URL.rstrip('/')}/r/{run_id}"
+        phases = _read_phase_snapshot(run_id)
         send_run_complete(
             to=run["owner_email"],
             run_id=run_id,
@@ -93,9 +94,27 @@ def _notify(run_id: str) -> None:
             row_count=run.get("row_count") or 0,
             view_url=view_url,
             error_text=run.get("error_text"),
+            phases=phases,
         )
     except Exception:
         log.exception("notify failed for %s", run_id)
+
+
+def _read_phase_snapshot(run_id: str) -> dict | None:
+    """Read frozen .pipeline_state.json snapshot for a finished run."""
+    snap = RUNS_DIR / run_id / "state_snapshot.json"
+    if not snap.exists():
+        return None
+    try:
+        state = json.loads(snap.read_text(encoding="utf-8"))
+        phases = state.get("phases", {})
+        return {
+            "api": (phases.get("api") or {}).get("status", "pending"),
+            "scraper_main": (phases.get("scraper_main") or {}).get("status", "pending"),
+            "merge": (phases.get("merge") or {}).get("status", "pending"),
+        }
+    except Exception:
+        return None
 
 
 def _env_root() -> Path:
@@ -148,18 +167,35 @@ def _process(run_id: str) -> None:
     log.info("%s: cmd = %s", run_id, " ".join(shlex.quote(c) for c in cmd))
 
     pipeline_start_ts = time.time()
+    # 6h safety net — covers ~100 MPN × 3 min/MPN + buffer. Normal runs finish
+    # in minutes; this only fires when pipeline truly hangs (playwright dead
+    # element wait, network deadlock, etc.) — otherwise we'd loop forever and
+    # block the single worker queue indefinitely.
+    PIPELINE_TIMEOUT_SECONDS = 6 * 3600
     with log_path.open("w", encoding="utf-8") as logf:
         logf.write(f"# Command: {' '.join(shlex.quote(c) for c in cmd)}\n")
         logf.write(f"# Started: {datetime.now().isoformat()}\n")
         logf.write(f"# cwd: {PROJECT_ROOT}\n\n")
         logf.flush()
-        result = subprocess.run(
-            cmd,
-            cwd=str(PROJECT_ROOT),
-            stdout=logf,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=str(PROJECT_ROOT),
+                stdout=logf,
+                stderr=subprocess.STDOUT,
+                check=False,
+                timeout=PIPELINE_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            logf.write(f"\n# TIMEOUT after {PIPELINE_TIMEOUT_SECONDS // 3600}h — pipeline killed\n")
+            log.error("%s: pipeline timed out after %dh", run_id, PIPELINE_TIMEOUT_SECONDS // 3600)
+            storage.mark_failed(
+                run_id,
+                f"Pipeline 超过 {PIPELINE_TIMEOUT_SECONDS // 3600} 小时未完成（兜底超时）。"
+                f"如果 MPN 数量很大，请联系管理员评估是否需要拆批跑。"
+                f"完整日志：webapp/runs/{run_id}/pipeline.log",
+            )
+            return
 
     log.info("%s: pipeline exited rc=%s", run_id, result.returncode)
 

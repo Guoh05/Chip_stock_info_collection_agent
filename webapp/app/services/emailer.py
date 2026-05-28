@@ -91,6 +91,31 @@ def send_magic_link(to: str, link: str) -> bool:
     return _send(to, subject, html, text)
 
 
+_PHASE_DISPLAY = {
+    "api": "Phase 1: API sweep",
+    "scraper_main": "Phase 2: Web scraper",
+    "merge": "Phase 3: 合并结果",
+}
+_PHASE_ICON = {"ok": "✅", "failed": "❌", "skipped": "⊝", "running": "▣", "pending": "▢"}
+_PHASE_TEXT = {"ok": "完成", "failed": "失败", "skipped": "跳过", "running": "运行中", "pending": "等待"}
+
+
+def _format_phase_summary(phases: dict | None, *, html: bool) -> str:
+    if not phases:
+        return ""
+    lines = []
+    for key in ("api", "scraper_main", "merge"):
+        st = phases.get(key, "pending")
+        icon = _PHASE_ICON.get(st, "▢")
+        label = _PHASE_DISPLAY[key]
+        text = _PHASE_TEXT.get(st, st)
+        lines.append(f"{icon} {label} [{text}]")
+    if html:
+        rows = "".join(f"<li>{line}</li>" for line in lines)
+        return f'<ul style="list-style:none; padding-left:0; font-family:Consolas,monospace;">{rows}</ul>'
+    return "\n".join(lines)
+
+
 def send_run_complete(
     to: str,
     run_id: str,
@@ -98,15 +123,19 @@ def send_run_complete(
     row_count: int,
     view_url: str,
     error_text: str | None = None,
+    phases: dict | None = None,
 ) -> bool:
     """Notify owner that a run finished. status ∈ {done, done_empty, failed}."""
+    phase_summary_html = _format_phase_summary(phases, html=True)
+    phase_summary_text = _format_phase_summary(phases, html=False)
+
     if status == "done":
         subject = f"查询结果就绪 — {run_id}（{row_count} 行现货）"
         headline = "查询完成"
         body_intro = f"共找到 <strong>{row_count}</strong> 行现货数据。"
         text_intro = f"共找到 {row_count} 行现货数据。"
     elif status == "done_empty":
-        subject = f"查询完成（无现货）— {run_id}"
+        subject = f"查询完成(无现货) — {run_id}"
         headline = "查询完成 — 无现货"
         body_intro = (
             "本次查询的 MPN 在搜索的 source 都没有现货库存。"
@@ -118,6 +147,9 @@ def send_run_complete(
         headline = "查询失败"
         body_intro = "Pipeline 报错。点击下方按钮查看错误详情。"
         text_intro = body_intro
+        if phase_summary_html:
+            body_intro += f"<br><br><strong>各阶段状态：</strong>{phase_summary_html}"
+            text_intro += f"\n\n各阶段状态：\n{phase_summary_text}"
         if error_text:
             body_intro += (
                 f'<br><pre style="background:#f7f7f7;padding:8px;'

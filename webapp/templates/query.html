@@ -16,6 +16,12 @@
     <button class="tab" data-tab="upload" type="button">上传 Excel</button>
 </div>
 
+<div class="mpn-volume-warn">
+    ⚠️ <strong>不建议单次提交超过 50 个 MPN</strong> ——
+    web scraper 阶段每个 MPN 约耗时 3 分钟，50 个约 2.5 小时，100 个约 5 小时。
+    建议批量较大时拆分多次提交。
+</div>
+
 <form action="/query" method="post" id="paste-form" class="tab-pane active">
     <input type="hidden" name="mode" value="paste">
     <label for="mpns_text">MPN 列表（<strong>每行一个</strong>）：</label>
@@ -26,6 +32,10 @@
     </p>
     <textarea id="mpns_text" name="mpns_text" rows="12"
               placeholder="STM32G030F6P6&#10;NRF52840&#10;BT168GW,115&#10;BD18333EUV-ME2">{{ prefill or '' }}</textarea>
+    <div class="mpn-counter" id="mpn-counter">已粘贴 0 个 MPN（预计约 0 分钟）</div>
+    <div class="mpn-counter-warn" id="mpn-counter-warn" style="display:none;">
+        ⚠️ 超过 50 个 MPN，预计耗时较长（详见上方红色提示）。仍要提交请直接点击下方按钮。
+    </div>
     <button type="submit" class="primary">提交查询</button>
 </form>
 
@@ -55,5 +65,26 @@ document.querySelectorAll('.tab').forEach(btn => {
         document.getElementById(btn.dataset.tab + '-form').classList.add('active');
     });
 });
+
+const ta = document.getElementById('mpns_text');
+const counterEl = document.getElementById('mpn-counter');
+const warnEl = document.getElementById('mpn-counter-warn');
+function updateMpnCount() {
+    const lines = (ta.value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const n = lines.length;
+    const mins = n * 3;
+    counterEl.textContent = `已粘贴 ${n} 个 MPN（预计约 ${mins} 分钟）`;
+    if (n > 50) {
+        counterEl.classList.add('over-limit');
+        warnEl.style.display = 'block';
+    } else {
+        counterEl.classList.remove('over-limit');
+        warnEl.style.display = 'none';
+    }
+}
+if (ta) {
+    ta.addEventListener('input', updateMpnCount);
+    updateMpnCount();
+}
 </script>
 {% endblock %}
