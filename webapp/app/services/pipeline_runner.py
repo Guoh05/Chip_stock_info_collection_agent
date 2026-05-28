@@ -167,7 +167,8 @@ def _process(run_id: str) -> None:
     log.info("%s: cmd = %s", run_id, " ".join(shlex.quote(c) for c in cmd))
 
     pipeline_start_ts = time.time()
-    # 6h safety net — covers ~100 MPN × 3 min/MPN + buffer. Normal runs finish
+    # 6h safety net — covers ~70 MPN × 5 min/MPN + buffer. >70 MPN runs may hit
+    # this and get an actionable error pointing the user to split the batch up.
     # in minutes; this only fires when pipeline truly hangs (playwright dead
     # element wait, network deadlock, etc.) — otherwise we'd loop forever and
     # block the single worker queue indefinitely.

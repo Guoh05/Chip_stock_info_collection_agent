@@ -17,9 +17,9 @@ from ..config import PROJECT_ROOT, RUNS_DIR, TEMPLATES_DIR, PIPELINE_ENV
 from ..schemas import HIGHLIGHT_COLUMNS, WEBAPP_SCHEMA_v1, render_cell
 from ..services.progress import read_progress
 
-# Decisions #6 + UX: estimate ~3 min per MPN (scraper-dominated, --sequential
+# Decisions #6 + UX: estimate ~5 min per MPN (scraper-dominated, --sequential
 # over 9 sources). Used to show "预计 N 分钟" hint on the run page.
-SECONDS_PER_MPN_ESTIMATE = 180
+SECONDS_PER_MPN_ESTIMATE = 300
 
 log = logging.getLogger("webapp.runs")
 router = APIRouter()
@@ -133,7 +133,16 @@ async def run_status(request: Request, run_id: str):
         else _phases_for_terminal_run(run_id, overall)
     )
     qpos = storage.queue_position(run_id) if overall == "queued" else 0
-    progress = read_progress(RUNS_DIR / run_id / "pipeline.log") if overall == "running" else None
+    progress = None
+    if overall == "running":
+        current_phase = next(
+            (k for k in ("api", "scraper_main", "merge") if phases.get(k) == "running"),
+            None,
+        )
+        progress = read_progress(
+            RUNS_DIR / run_id / "pipeline.log",
+            current_phase=current_phase,
+        )
     return JSONResponse({
         "status": overall,
         "phases": phases,

@@ -18,7 +18,7 @@
 
 <div class="mpn-volume-warn">
     ⚠️ <strong>不建议单次提交超过 50 个 MPN</strong> ——
-    web scraper 阶段每个 MPN 约耗时 3 分钟，50 个约 2.5 小时，100 个约 5 小时。
+    web scraper 阶段每个 MPN 约耗时 5 分钟，50 个约 4 小时，100 个约 8 小时。
     建议批量较大时拆分多次提交。
 </div>
 
@@ -71,10 +71,17 @@ const counterEl = document.getElementById('mpn-counter');
 const warnEl = document.getElementById('mpn-counter-warn');
 function updateMpnCount() {
     const lines = (ta.value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-    const n = lines.length;
-    const mins = n * 3;
-    counterEl.textContent = `已粘贴 ${n} 个 MPN（预计约 ${mins} 分钟）`;
-    if (n > 50) {
+    const seen = new Set();
+    const unique = [];
+    for (const m of lines) { if (!seen.has(m)) { seen.add(m); unique.push(m); } }
+    const total = lines.length;
+    const uniq = unique.length;
+    const dup = total - uniq;
+    const mins = uniq * 5;
+    let msg = `已粘贴 ${total} 行 → ${uniq} 个唯一 MPN（预计约 ${mins} 分钟）`;
+    if (dup > 0) msg += ` · 已自动去除 ${dup} 个重复`;
+    counterEl.textContent = msg;
+    if (uniq > 50) {
         counterEl.classList.add('over-limit');
         warnEl.style.display = 'block';
     } else {
