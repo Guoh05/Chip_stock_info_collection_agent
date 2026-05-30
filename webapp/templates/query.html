@@ -18,7 +18,7 @@
 
 <div class="mpn-volume-warn">
     ⚠️ <strong>不建议单次提交超过 50 个 MPN</strong> ——
-    web scraper 阶段每个 MPN 约耗时 5 分钟，50 个约 4 小时，100 个约 8 小时。
+    web scraper 阶段每个 MPN 约耗时 3.5 分钟，50 个约 3 小时，100 个约 6 小时。
     建议批量较大时拆分多次提交。
 </div>
 
@@ -77,7 +77,7 @@ function updateMpnCount() {
     const total = lines.length;
     const uniq = unique.length;
     const dup = total - uniq;
-    const mins = uniq * 5;
+    const mins = Math.round(uniq * 3.5);
     let msg = `已粘贴 ${total} 行 → ${uniq} 个唯一 MPN（预计约 ${mins} 分钟）`;
     if (dup > 0) msg += ` · 已自动去除 ${dup} 个重复`;
     counterEl.textContent = msg;

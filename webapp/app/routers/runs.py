@@ -18,9 +18,10 @@ from ..schemas import HIGHLIGHT_COLUMNS, WEBAPP_SCHEMA_v1, render_cell
 from ..services.progress import read_progress
 from ..services.pipeline_runner import cancel_run
 
-# Decisions #6 + UX: estimate ~5 min per MPN (scraper-dominated, --sequential
-# over 9 sources). Used to show "预计 N 分钟" hint on the run page.
-SECONDS_PER_MPN_ESTIMATE = 300
+# Decisions #6 + UX: estimate ~3.5 min per MPN. Lowered from 5 min after the
+# 3-way parallel scraper landed (in-cloud measure: ~3.3 min/MPN over 4 MPNs).
+# Used to show "预计 N 分钟" hint on the run page.
+SECONDS_PER_MPN_ESTIMATE = 210
 
 log = logging.getLogger("webapp.runs")
 router = APIRouter()
