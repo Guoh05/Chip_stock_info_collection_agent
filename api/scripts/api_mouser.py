@@ -301,6 +301,7 @@ def normalize_part(part: dict, query: str) -> dict:
     # Parameters
     parameters: list[dict] = []
     package = None
+    standard_pack_qty = None
     lifecycle_status = part.get("LifecycleStatus") or None
     for attr in part.get("ProductAttributes") or []:
         if not isinstance(attr, dict):
@@ -314,6 +315,29 @@ def normalize_part(part: dict, query: str) -> dict:
         lname = name.lower()
         if package is None and ("package" in lname or "封装" in name):
             package = value
+        if standard_pack_qty is None and "标准包装数量" in name:
+            standard_pack_qty = _parse_int(value)
+
+    # Packaging option (per "Distributor packaging options" reference).
+    # Mouser exposes Reeling (bool) + AlternatePackagings[] (links to other
+    # Mouser PNs that carry the same MPN in different packaging). The native
+    # search response does NOT carry a free-text "Tape & Reel/Cut Tape" string,
+    # so we infer from `Reeling` + the Mouser PN suffix (`-TR` / `-CT`).
+    site_reeling = bool(part.get("Reeling"))
+    site_alt_packagings = [
+        (d.get("APMfrPN") or "").strip()
+        for d in (part.get("AlternatePackagings") or [])
+        if isinstance(d, dict)
+    ]
+    pn_upper = (mouser_pn or "").upper()
+    if pn_upper.endswith("-CT") or "-CT-" in pn_upper:
+        packaging_option = "Cut Tape"
+    elif pn_upper.endswith("-TR") or "-TR-" in pn_upper or pn_upper.endswith("-T&R"):
+        packaging_option = "Tape & Reel"
+    elif site_reeling:
+        packaging_option = "Tape & Reel"
+    else:
+        packaging_option = ""
 
     out: dict = {
         # Identity
@@ -342,6 +366,10 @@ def normalize_part(part: dict, query: str) -> dict:
         "site_factory_stock": factory_raw,
         "site_availability_on_order": on_order_raw,
         "site_lead_time": lead_time_raw,
+        "site_reeling": site_reeling,
+        "site_alternate_packagings": site_alt_packagings,
+        "site_standard_pack_qty": standard_pack_qty,
+        "packaging_option": packaging_option,
         # Pricing
         "prices": prices,
         "currency": currency,

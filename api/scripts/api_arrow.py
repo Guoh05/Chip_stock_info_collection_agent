@@ -264,6 +264,7 @@ def normalize_part(part: dict, query: str) -> dict:
                     "ships_in": sp.get("shipsIn") or "",
                     "moq": _parse_int(sp.get("minimumOrderQuantity")),
                     "pack_size": _parse_int(sp.get("packSize")),
+                    "container_type": sp.get("containerType") or "",
                     "date_code": sp.get("dateCode") or "",
                     "eccn_code": sp.get("eccnCode") or "",
                     "hts_code": sp.get("htsCode") or "",

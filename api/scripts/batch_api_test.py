@@ -448,11 +448,18 @@ def run_element14(input_mpn: str, run_dir: Path) -> dict:
         )
     variants_info: list[dict] = []
     chosen_ex: dict | None = None
+    # Element14 commonly returns multiple SKUs for the same MPN, each with a
+    # different packaging (Cut Tape / Re-Reel / Full Reel). Per the "same-MPN
+    # multi-SKU expansion" rule, collect every SKU whose MPN matches the chosen
+    # variant's MPN so the batch_index emits one (warehouse) sub-row per SKU.
+    expanded_extracteds: list[dict] = []
     if rec.get("status") == "ok" and root is not None:
         products = root.get("products") or []
         seen: dict[str, dict] = {}
+        all_extracted_per_sku: list[dict] = []
         for raw in products:
             ex = api_element14.normalize_product(raw, input_mpn, store_id)
+            all_extracted_per_sku.append(ex)
             mpn = ex.get("manufacturer_part_number") or "UNKNOWN"
             prev = seen.get(mpn)
             if prev is None or (
@@ -464,6 +471,13 @@ def run_element14(input_mpn: str, run_dir: Path) -> dict:
             info = api_element14.write_variant(rec, bundle["extracted"], bundle["raw"], run_dir, mpn)
             variants_info.append(info)
         chosen_ex = _pick_element14(root, input_mpn, store_id)
+        # Filter by the chosen variant's MPN — only expand same-MPN multi-SKU.
+        chosen_mpn = ((chosen_ex or {}).get("manufacturer_part_number") or "").strip().lower()
+        if chosen_mpn:
+            expanded_extracteds = [
+                ex for ex in all_extracted_per_sku
+                if (ex.get("manufacturer_part_number") or "").strip().lower() == chosen_mpn
+            ]
     parent_rec = dict(rec)
     parent_rec["variants_summary"] = [
         {
@@ -478,7 +492,12 @@ def run_element14(input_mpn: str, run_dir: Path) -> dict:
     ]
     _write_parent_json(parent_rec, run_dir, input_mpn)
     api_element14.write_parent_summary(parent_rec, variants_info, run_dir)
-    return {"record": rec, "chosen_extracted": chosen_ex, "num_variants": len(variants_info)}
+    return {
+        "record": rec,
+        "chosen_extracted": chosen_ex,
+        "expanded_extracteds": expanded_extracteds,
+        "num_variants": len(variants_info),
+    }
 
 
 def run_arrow(input_mpn: str, run_dir: Path) -> dict:
@@ -639,7 +658,7 @@ INDEX_COLUMNS = [
     "stockpool_qty", "ship_text", "lead_time_days", "moq",
     "min_break_qty", "price_at_min_qty",
     "max_break_qty", "price_at_max_qty",
-    "num_price_tiers", "currency",
+    "num_price_tiers", "currency", "packaging_option",
     "datasheet_url", "run_subdir", "error",
 ]
 
@@ -659,18 +678,51 @@ def _vendor_sku(source: str, ex: dict) -> str:
     return ""
 
 
+def _derive_packaging_option(source: str, ex: dict, sb_row: dict,
+                              site_source: dict | None) -> str:
+    """Map per-row packaging info to a canonical, English label.
+
+    DigiKey: the `Packaging — <name>` label that `api_digikey.normalize_product`
+        emits on each ProductVariations[] row carries the native packaging name
+        ("Tape & Reel (TR)" / "Cut Tape (CT)" / "Digi-Reel®" / …). We strip
+        the "Packaging — " prefix.
+    Element14: the normalize already maps unitOfMeasure + reeling → a canonical
+        value ("Cut Tape" / "Full Reel" / "Re-Reel" / "Each"). Same on every
+        warehouse row for a given SKU variant.
+    Mouser: same — normalize derives a canonical value from Reeling + the
+        Mouser PN suffix (`-TR` / `-CT`). Same on every warehouse row.
+    Arrow: per-warehouse — pulled from `site_sources[i].container_type`
+        (sparse; "Cut Strips" is the only observed value as of 2026-05).
+    LCSC: not exposed by `search/global`. Empty.
+    """
+    if source == "DIGIKEY":
+        label = sb_row.get("label") or ""
+        if label.startswith("Packaging — "):
+            return label[len("Packaging — "):].strip()
+        return ""
+    if source in ("ELEMENT14", "MOUSER"):
+        return ex.get("packaging_option") or ""
+    if source == "ARROW":
+        return (site_source or {}).get("container_type") or ""
+    return ""
+
+
 def iter_warehouse_rows(
     input_mpn: str,
     expected_mfr: str,
     source: str,
     bundle: dict,
     run_subdir: Path,
+    ex_override: dict | None = None,
 ) -> Iterable[dict]:
     """Yield one row per non-aggregate warehouse in the chosen variant's
     stock_breakdown[]. Element14's 'Stock level (total)' aggregate is filtered.
+
+    `ex_override` lets the caller explode an alternate variant's
+    `extracted` (used by run_element14's same-MPN multi-SKU expansion).
     """
     rec = bundle.get("record") or {}
-    ex = bundle.get("chosen_extracted") or {}
+    ex = ex_override if ex_override is not None else (bundle.get("chosen_extracted") or {})
     status = rec.get("status") or "no_results"
     returned_mpn = ex.get("manufacturer_part_number") or ""
     returned_mfr = ex.get("manufacturer") or ""
@@ -722,6 +774,9 @@ def iter_warehouse_rows(
             if ss.get("tiers"):
                 price_tiers = ss["tiers"]
 
+        site_source_row = site_sources[i] if (source == "ARROW" and i < len(site_sources)) else None
+        packaging_option = _derive_packaging_option(source, ex, row, site_source_row)
+
         pp = derive_price_pair(price_tiers)
         yield {
             "input_mpn": input_mpn,
@@ -745,6 +800,7 @@ def iter_warehouse_rows(
             "price_at_max_qty": pp["price_at_max_qty"],
             "num_price_tiers": pp["num_price_tiers"],
             "currency": currency,
+            "packaging_option": packaging_option,
             "datasheet_url": datasheet_url,
             "run_subdir": run_subdir_str,
             "error": "",
@@ -783,6 +839,7 @@ def make_empty_source_row(
         "price_at_max_qty": None,
         "num_price_tiers": 0,
         "currency": "",
+        "packaging_option": "",
         "datasheet_url": "",
         "run_subdir": str(run_subdir.relative_to(PROJECT_ROOT)).replace("\\", "/"),
         "error": error or "",
@@ -1070,7 +1127,21 @@ def _call_one_source(
     status = rec.get("status") or ("exception" if error else "no_results")
 
     if status == "ok" and chosen:
-        new_rows = list(iter_warehouse_rows(mpn, mfr, source, bundle, run_dir))
+        # Same-MPN multi-SKU expansion (Element14 only as of 2026-05). When
+        # `expanded_extracteds` has >1 entry, iterate each — they share the
+        # same returned_mpn but differ in vendor_sku + packaging_option.
+        expanded = bundle.get("expanded_extracteds") if bundle else None
+        if expanded and len(expanded) > 1:
+            new_rows = []
+            for variant_ex in expanded:
+                new_rows.extend(iter_warehouse_rows(
+                    mpn, mfr, source, bundle, run_dir, ex_override=variant_ex
+                ))
+            # Renumber warehouse_idx globally for this (chip × source) group.
+            for i, r in enumerate(new_rows, start=1):
+                r["warehouse_idx"] = i
+        else:
+            new_rows = list(iter_warehouse_rows(mpn, mfr, source, bundle, run_dir))
         if not new_rows:
             new_rows = [make_empty_source_row(
                 mpn, mfr, source, "no_results",
@@ -1288,9 +1359,12 @@ def main(argv: list[str]) -> int:
           f"{len(sources_to_run)} sources.")
     print(f"Wrote: {batch_dir}")
 
-    # Refresh api/README.md status block — best-effort.
+    # Refresh api/README.md status block — best-effort, PROD RUNS ONLY.
+    # The committed README is a prod-facing artifact; test sweeps must not
+    # clobber it. _update_readme_status.py scans production/api/ for the latest
+    # batch, so gating here keeps the snapshot in sync with what the scanner reads.
     regen = PROJECT_ROOT / "api" / "scripts" / "_update_readme_status.py"
-    if regen.exists():
+    if args.env == "prod" and regen.exists():
         try:
             import subprocess
             subprocess.run(
@@ -1302,6 +1376,8 @@ def main(argv: list[str]) -> int:
             print(f"Refreshed: api/README.md status block")
         except (subprocess.TimeoutExpired, OSError):
             pass
+    elif args.env != "prod":
+        print("Skipped api/README.md refresh (test run — README tracks prod only)")
 
     return 0
 

@@ -329,6 +329,25 @@ def normalize_product(prod: dict, query: str, store_id: str) -> dict:
     rohs_status = prod.get("rohsStatusCode") or prod.get("rohsStatusComplianceCode")
     product_status = prod.get("productStatus") or ""
 
+    # Packaging option (per "Distributor packaging options" reference).
+    # Element14 encodes packaging via three top-level fields on each SKU:
+    #   unitOfMeasure: "每个" / "单件（切割供应）" / "单件（整卷供应）"
+    #   reeling:       True → SKU suffix `RL`, Re-Reel cut from a full reel
+    #   packSize:      integer (qty per unit)
+    site_unit_of_measure = prod.get("unitOfMeasure") or ""
+    site_reeling = bool(prod.get("reeling"))
+    site_pack_size = prod.get("packSize")
+    if site_reeling:
+        packaging_option = "Re-Reel"
+    elif site_unit_of_measure == "单件（整卷供应）":
+        packaging_option = "Full Reel"
+    elif site_unit_of_measure == "单件（切割供应）":
+        packaging_option = "Cut Tape"
+    elif site_unit_of_measure == "每个":
+        packaging_option = "Each"
+    else:
+        packaging_option = ""
+
     out: dict = {
         # Identity
         "element14_sku": sku,
@@ -356,6 +375,10 @@ def normalize_product(prod: dict, query: str, store_id: str) -> dict:
         "site_regional_breakdown": regional,
         "site_warehouse_breakdown": stock.get("breakdown") or [],
         "site_store_id": store_id,
+        "site_unit_of_measure": site_unit_of_measure,
+        "site_reeling": site_reeling,
+        "site_pack_size": site_pack_size,
+        "packaging_option": packaging_option,
         # Pricing
         "prices": prices,
         "currency": currency,

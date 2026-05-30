@@ -1,6 +1,6 @@
 ﻿"""Regenerate the auto-managed status section of api/README.md.
 
-Reads the most recent test/api/BatchTest_<ts>/ folder and replaces the
+Reads the most recent production/api/BatchTest_<ts>/ folder and replaces the
 text between
     <!-- BEGIN AUTO:status ... -->
 and
@@ -26,7 +26,10 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 README = PROJECT_ROOT / "api" / "README.md"
-API_TEST_ROOT = PROJECT_ROOT / "test" / "api"
+# The committed README is a prod-facing artifact, so the snapshot is sourced
+# from production/api/ (NOT test/api/). The driver only triggers this refresh
+# on --env prod runs; manual + PostToolUse-hook runs also read production/api/.
+API_PROD_ROOT = PROJECT_ROOT / "production" / "api"
 BEGIN_RE = re.compile(r"<!-- BEGIN AUTO:status[^>]*-->", re.DOTALL)
 END_MARKER = "<!-- END AUTO:status -->"
 
@@ -57,9 +60,9 @@ STATUS_ICON = {"ok": "✅", "pending": "⏳", "blocked": "❌"}
 
 
 def find_latest_batch() -> Path | None:
-    if not API_TEST_ROOT.exists():
+    if not API_PROD_ROOT.exists():
         return None
-    batches = sorted(API_TEST_ROOT.glob("BatchTest_*"))
+    batches = sorted(API_PROD_ROOT.glob("BatchTest_*"))
     return batches[-1] if batches else None
 
 
@@ -142,7 +145,7 @@ def render_block(today: str, batch_dir: Path | None, stats: dict) -> str:
         out.append(f"| {v} | {ep_cell} | {auth} | {STATUS_ICON.get(st, '?')} |")
     out.append("")
     if not batch_dir or not stats or not stats.get("per_channel"):
-        out.append("_No batch runs yet in `test/api/`._")
+        out.append("_No batch runs yet in `production/api/`._")
         out.append("")
     else:
         rel = batch_dir.relative_to(PROJECT_ROOT).as_posix()

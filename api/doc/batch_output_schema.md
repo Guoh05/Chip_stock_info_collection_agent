@@ -60,9 +60,31 @@ Granularity: **one row per `(input_mpn × source × warehouse)`**. When a chip i
 | 19 | `price_at_max_qty` | float | yes | Unit price at `max_break_qty` (typically the cheapest tier). |
 | 20 | `num_price_tiers` | int | no | Total tier count for this warehouse's price list (0 when no prices). |
 | 21 | `currency` | str | yes | Currency for the price tiers in this row. Arrow: per-warehouse `site_sources[].currency` (typically USD/EUR/JPY). Mouser .cn key always `RMB`. Digikey always `USD`. Element14 derives from `storeInfo.id` (Chinese store → `CNY`). |
-| 22 | `datasheet_url` | str | yes | Direct PDF URL when the API exposes one. Repeated across warehouse rows. |
-| 23 | `run_subdir` | str | no | Forward-slash relative path from PROJECT_ROOT to the per-MPN-per-source folder. Use to load `<safe_mpn>.json` for full detail. |
-| 24 | `error` | str | yes | Truncated error message (≤500 chars). For `http_error`: short response body excerpt. For `exception`: `TypeName: message`. For `auth_failed`: cause from the auth round-trip. Empty on ok / no_results / missing_credentials. |
+| 22 | `packaging_option` | str | yes | Canonical packaging-form label for the row's `vendor_sku`. See [Packaging option](#packaging-option) below. Empty when the source doesn't expose it. |
+| 23 | `datasheet_url` | str | yes | Direct PDF URL when the API exposes one. Repeated across warehouse rows. |
+| 24 | `run_subdir` | str | no | Forward-slash relative path from PROJECT_ROOT to the per-MPN-per-source folder. Use to load `<safe_mpn>.json` for full detail. |
+| 25 | `error` | str | yes | Truncated error message (≤500 chars). For `http_error`: short response body excerpt. For `exception`: `TypeName: message`. For `auth_failed`: cause from the auth round-trip. Empty on ok / no_results / missing_credentials. |
+
+### Packaging option
+
+The `packaging_option` column carries a canonical English label for the packaging form of *that row's* `vendor_sku`. It is **purely informational** — it does **not** change row identity, and naive `SUM(stockpool_qty) GROUP BY input_mpn, source` is unchanged by it. Per-source derivation:
+
+| Source | Where it comes from | Typical values |
+|---|---|---|
+| DigiKey | `ProductVariations[].PackageType.Name`, surfaced via `stock_breakdown[].label = "Packaging — <name>"` | `Tape & Reel (TR)`, `Cut Tape (CT)`, `Digi-Reel®`, `Tube`, `Tray` |
+| Element14 | `unitOfMeasure` + `reeling` (bool) + SKU suffix `RL` → canonical | `Cut Tape`, `Full Reel`, `Re-Reel`, `Each` |
+| Mouser | `Reeling` (bool) + Mouser PN suffix (`-TR` / `-CT`) heuristic | `Tape & Reel`, `Cut Tape`, or empty |
+| Arrow | `sourceParts[].containerType` (sparse — populated on a minority of rows) | `Cut Strips`, or empty |
+| LCSC | not exposed by `search/global` | always empty |
+
+#### Element14 same-MPN multi-SKU expansion
+
+Element14 commonly returns multiple SKUs for the same MPN, each with a different packaging (e.g. `4163358` → Cut Tape, `4163358RL` → Re-Reel). Since 2026-05-27, `batch_index` **expands every same-MPN SKU**: one full set of `stock_breakdown[]` rows per SKU, each tagged with its own `vendor_sku` + `packaging_option`. Practical impact:
+
+- Element14 row count per chip grew **N×** where N is the number of in-MPN SKUs. Typical: 1–3 SKUs → 5–15 rows per (chip × ELEMENT14).
+- The chosen-best variant (used by per-MPN summary writers and `batch_index.json::extracted_best`) is **unchanged** — single record per `(MPN × source)` still works as before. Only the long-form `batch_index.csv` is exploded.
+- Cross-source group counts (e.g. "OK/no_results pass rate") are still deduped by `(input_mpn, source)`, so the headline metric is invariant.
+- All warehouse-row dedup rules above (Element14 aggregate + Arrow mirrors) still apply, **per SKU**.
 
 ### Element14 aggregate row (kept; dedup before summing)
 
