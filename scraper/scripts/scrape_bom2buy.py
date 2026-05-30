@@ -457,6 +457,12 @@ def _canonical_from_variant(v: dict, input_mpn: str) -> dict:
             # independent; the warehouse-exploded batch_index downstream should
             # use this field rather than the cell-level top-level prices[].
             "prices": per_row_prices,
+            # Unified cross-source packaging field at the WAREHOUSE-ROW level
+            # (bom2buy's `package_info` is per distributor — e.g. "Tray" / "Tape & Reel"
+            # / "Cut Tape" — extracted from the `.td-stock` cell text tail).
+            # Cell-level `packaging_option` is left empty for bom2buy on purpose;
+            # the per-row value is what downstream warehouse-exploded exports read.
+            "packaging_option": d.get("package_info") or "",
         })
     # Derive package from a heuristic in category text
     pkg = None
@@ -476,6 +482,11 @@ def _canonical_from_variant(v: dict, input_mpn: str) -> dict:
         "package": pkg,
         "lifecycle_status": v.get("lifecycle_status"),
         "min_order_qty": min_order_qty,
+        # bom2buy exposes shipping form per-distributor (`.td-stock` text tail like
+        # "76,624 Tray"), NOT at the chip level. Cell-level `packaging_option` is
+        # intentionally empty; the warehouse-exploded batch_index reads
+        # `stock_breakdown[i].packaging_option` instead.
+        "packaging_option": "",
         # Site-native preservation
         "site_distributors": v.get("distributors") or [],
         "site_category": v.get("category"),

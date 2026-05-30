@@ -6,23 +6,23 @@ For the high-level status and pass-rate report, see `scraper_report_v3.md`. For 
 
 <!-- BEGIN AUTO:source_status — managed by scraper/scripts/_update_readme_status.py. Hand edits between these markers will be overwritten on the next batch run. -->
 
-## Current status snapshot (2026-05-24)
+## Current status snapshot (2026-05-29)
 
-**Latest batch:** `test/scraper/BatchTest_20260524_22_27_16/` — 27 MPNs × 9 sources = 243 cells.
+**Latest batch:** `test/scraper/BatchTest_20260529_15_33_19/` — 6 MPNs × 8 sources = 48 cells.
 
 ### Working sources
 
 | Source | Script | OK | No results | Blocked | Failed | OK % |
 |---|---|---|---|---|---|---|
-| **LCSC_立创商城** | `scrape_lcsc_v3.py` | 18 | 9 | 0 | 0 | 66.7 % |
-| **DIGIKEY_得捷电子** | `scrape_digikey.py` | 13 | 0 | 0 | 14 | 48.1 % |
-| **HQEW_华强电子网** | `scrape_hqew.py` | 25 | 2 | 0 | 0 | 92.6 % |
-| **FUTURE_Future_Electronics** | `scrape_future.py` | 12 | 15 | 0 | 0 | 44.4 % |
-| **RSONLINE_RS欧时** | `scrape_rsonline.py` | 0 | 27 | 0 | 0 | 0.0 % |
-| **ONEYAC_唯样商城** | `scrape_oneyac.py` | 15 | 12 | 0 | 0 | 55.6 % |
-| **ICKEY_云汉芯城** | `scrape_ickey.py` | 16 | 11 | 0 | 0 | 59.3 % |
-| **ROCHESTER_Rochester_Electronics** | `scrape_rochester.py` | 2 | 25 | 0 | 0 | 7.4 % |
-| **BOM2BUY_买芯片网** | `scrape_bom2buy.py` | 12 | 15 | 0 | 0 | 44.4 % |
+| **LCSC_立创商城** | `scrape_lcsc_v3.py` | 4 | 1 | 0 | 1 | 66.7 % |
+| **DIGIKEY_得捷电子** | `scrape_digikey.py` | 4 | 0 | 1 | 1 | 66.7 % |
+| **HQEW_华强电子网** | `scrape_hqew.py` | 6 | 0 | 0 | 0 | 100.0 % |
+| **FUTURE_Future_Electronics** | `scrape_future.py` | 5 | 1 | 0 | 0 | 83.3 % |
+| **RSONLINE_RS欧时** | `scrape_rsonline.py` | 0 | 6 | 0 | 0 | 0.0 % |
+| **ONEYAC_唯样商城** | `scrape_oneyac.py` | 5 | 1 | 0 | 0 | 83.3 % |
+| **ICKEY_云汉芯城** | `scrape_ickey.py` | 5 | 1 | 0 | 0 | 83.3 % |
+| **ROCHESTER_Rochester_Electronics** | `scrape_rochester.py` | 0 | 6 | 0 | 0 | 0.0 % |
+| **BOM2BUY_买芯片网** | `scrape_bom2buy.py` | 0 | 0 | 0 | 0 | 0.0 % |
 
 ### Blocked sources
 
@@ -100,6 +100,26 @@ def fuzzy_ok(ret_mpn):
 ```
 
 If neither an exact match nor a fuzzy-substring match exists, return `no_results`. **Never** fall back to "the variant with the most stock."
+
+### Rule 4 — Optional unified fields (cross-source canonical)
+
+In addition to the five mandatory canonical fields (Rule 1), scrapers may populate optional cross-source fields that mirror the API track schema. These show up as columns in the warehouse-exploded `batch_index.csv` and as rows in per-cell `summary.md`.
+
+**`packaging_option`** — shipping / break form (e.g. Tape & Reel / Cut Tape / Tray / Tube / 编带 / 管装 / 散料). **Original site wording preserved verbatim — do NOT translate or canonicalise the value**, leave empty when the source does not publish it. Per-source population (shipped 2026-05-27):
+
+| Source | Populates `packaging_option`? | From | Native values |
+|---|---|---|---|
+| LCSC | ✅ cell-level | `productRecord.productArrange` | `编带` / `管装` / `散料` (CN) |
+| Digikey | ✅ cell-level | `priceQuantity.pricing[0].packaging` | `Tape & Reel (TR)` / `Cut Tape (CT)` / `Digi-Reel®` |
+| Future | ✅ cell-level | text-line scrape from `"N per <form>"` / `Available Packaging` row | `Tray` / `Reel` / `Tube` |
+| Rochester | ✅ cell-level | spec table `Packaging Type` row | `Tray` / `Reel` / `Tube` etc. |
+| bom2buy | ✅ **per-warehouse row** | `.td-stock` cell text tail propagated through `stock_breakdown[i].packaging_option` | `Tray` / `Tape & Reel` / `Cut Tape` / `卷盘` (mixed CN/EN; different distributors use different wording) |
+| HQEW | ❌ — cell-level `""` | n/a | column 7 is chip case (e.g. `SOT-223`), not shipping form |
+| ONEYAC | ❌ — cell-level `""` | n/a | not published on product page |
+| ICKEY | ❌ — cell-level `""` | n/a | not published |
+| RSONLINE | ❌ — cell-level `""` | n/a | `packType` = `FINISHED` / `BULK` — RS-internal classification, not shipping form like Tape/Reel; left empty per Rule 2 "no fabricated labels" |
+
+Cell-level value lives in `extracted.packaging_option`. For bom2buy the cell-level value is empty by design; the per-row value lives in `extracted.stock_breakdown[i].packaging_option` and is what the warehouse-exploded export reads. Both `batch_scraper_test.py` (8 main sources) and `_merge_bom2buy_into_batch.py` write the `packaging_option` column in `batch_index.csv` between `currency` and `datasheet_url`, matching the API track schema position.
 
 ---
 

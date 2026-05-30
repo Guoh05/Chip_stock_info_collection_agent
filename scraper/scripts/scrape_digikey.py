@@ -351,6 +351,7 @@ def normalize_next(data: dict) -> dict:
         "min_order_qty": (pq.get("pricing") or [{}])[0].get("minOrderQuantity") if pq.get("pricing") else None,
         "min_order_multiplier": data.get("minimumMultiplier"),
         "packaging": (pq.get("pricing") or [{}])[0].get("packaging") if pq.get("pricing") else None,
+        "packaging_option": (pq.get("pricing") or [{}])[0].get("packaging") if pq.get("pricing") else None,  # unified cross-source field — DigiKey label verbatim (e.g. "Tape & Reel (TR)")
         "package": None,
         "lifecycle_status": None,
         "categories": [{"id": c.get("id"), "label": c.get("label"), "url": c.get("url")} for c in cats],

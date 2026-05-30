@@ -110,6 +110,7 @@ def extract_from_detail_html(html: str, mpn: str) -> dict:
         "package": None,
         "package_pin_count": None,
         "packaging_type": None,
+        "packaging_option": None,  # unified cross-source field — mirrors packaging_type when present
         "packaging_quantity": None,
         "lifecycle_status": None,
         "rohs_compliance": None,
@@ -172,6 +173,7 @@ def extract_from_detail_html(html: str, mpn: str) -> dict:
                 extracted["package_pin_count"] = _parse_int(val)
             elif key == "Packaging Type":
                 extracted["packaging_type"] = val
+                extracted["packaging_option"] = val  # unified cross-source field
             elif key == "Packaging Quantity":
                 extracted["packaging_quantity"] = _parse_int(val)
             elif key == "RoHS Compliance":

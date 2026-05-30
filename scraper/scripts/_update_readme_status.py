@@ -10,9 +10,17 @@ Two destinations:
        <!-- BEGIN AUTO:source_status ... -->
        <!-- END AUTO:source_status -->
 
-Both blocks are rendered from the most recent `test/scraper/BatchTest_<ts>/`
+Both blocks are rendered from the most recent `production/scraper/BatchTest_<ts>/`
 folder, with the hand-maintained `CHANNEL_STATUS` table at the top of this file
 as the source of truth for which sources exist and what method each uses.
+
+The README status block is a **production-facing** snapshot, so this script
+only ever reads `production/scraper/` — never the dev `test/scraper/` tree.
+When no production batch exists yet it is a **no-op**: the existing AUTO blocks
+are left untouched rather than blanked to a "no batch runs yet" placeholder.
+That matters because the PostToolUse hook re-runs this script on every
+scraper-script edit, and a destructive no-data render would wipe the README on
+the next dev edit.
 
 Idempotent. Side-effect-free outside the two target files. Exit code 0 on
 success / no-op; 1 only if both files are missing their markers.
@@ -37,7 +45,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 README = PROJECT_ROOT / "scraper" / "README.md"
 SOURCE_TECH_REF = PROJECT_ROOT / "scraper" / "doc" / "source_technical_reference.md"
-SCRAPER_TEST_ROOT = PROJECT_ROOT / "test" / "scraper"
+# Production-facing snapshot: scan production/scraper/ only, never test/scraper/.
+SCRAPER_PROD_ROOT = PROJECT_ROOT / "production" / "scraper"
 
 # Marker pairs per target file
 TARGETS = {
@@ -150,9 +159,9 @@ def find_latest_batch() -> Path | None:
     for every other source, which is misleading. We require >= 3 distinct
     sources in `batch_index.csv` to consider a folder a "full batch".
     """
-    if not SCRAPER_TEST_ROOT.exists():
+    if not SCRAPER_PROD_ROOT.exists():
         return None
-    candidates = sorted(SCRAPER_TEST_ROOT.glob("BatchTest_*"), reverse=True)
+    candidates = sorted(SCRAPER_PROD_ROOT.glob("BatchTest_*"), reverse=True)
     for b in candidates:
         idx = b / "batch_index.csv"
         if not idx.exists():
@@ -280,7 +289,7 @@ def render_readme_block(today: str, batch_dir: Path | None, stats: dict) -> str:
         out.append(f"| {ch} | {method} | {STATUS_ICON.get(st, '?')} |")
     out.append("")
     if not batch_dir or not stats or not stats.get("per_channel"):
-        out.append("_No batch runs yet in `test/scraper/`._")
+        out.append("_No batch runs yet in `production/scraper/`._")
         out.append("")
     else:
         rel = batch_dir.relative_to(PROJECT_ROOT).as_posix()
@@ -376,7 +385,7 @@ def render_source_ref_block(today: str, batch_dir: Path | None, stats: dict) -> 
             )
         out.append("")
     else:
-        out.append("_No batch runs yet in `test/scraper/`._")
+        out.append("_No batch runs yet in `production/scraper/`._")
         out.append("")
         out.append("### Working sources (hand-maintained — no batch data yet)")
         out.append("")
@@ -433,7 +442,17 @@ def _apply_block(path: Path, begin_re: re.Pattern, end_marker: str,
 def main() -> int:
     today = datetime.now().strftime("%Y-%m-%d")
     batch_dir = find_latest_batch()
-    stats = parse_batch(batch_dir) if batch_dir else {}
+    if batch_dir is None:
+        # No production batch yet. Do NOT rewrite the AUTO blocks — that would
+        # clobber whatever snapshot is currently there with a "no batch runs
+        # yet" placeholder. The PostToolUse hook re-runs this on every
+        # scraper-script edit, so a destructive no-data render would blank the
+        # README on the next dev edit. Leave the blocks untouched until the
+        # first prod batch lands under production/scraper/.
+        print("No production batch under production/scraper/ — "
+              "leaving README / source_technical_reference AUTO blocks unchanged.")
+        return 0
+    stats = parse_batch(batch_dir)
 
     renderers = {
         "render_readme_block": render_readme_block,

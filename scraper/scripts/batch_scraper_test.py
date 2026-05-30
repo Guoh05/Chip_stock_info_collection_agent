@@ -624,6 +624,14 @@ def make_index_rows(
         "price_at_max_qty":  prices_summary["price_at_max_qty"],
         "num_price_tiers":   prices_summary["num_price_tiers"],
         "currency":          currency or "",
+        # Unified cross-source shipping/break form (mirrors API track). Sourced
+        # from cell-level `extracted.packaging_option` for the 8 main scrapers
+        # (LCSC `编带/管装/散料`, DigiKey "Tape & Reel (TR)", Future "Tray/Reel/Tube",
+        # Rochester "Tray/Reel/..."). HQEW / ONEYAC / ICKEY / RSONLINE leave it
+        # empty by design — those sources don't publish the shipping form.
+        # For bom2buy, this is overridden per warehouse row from `stock_breakdown[i].packaging_option`
+        # (different distributors ship the same chip in different forms).
+        "packaging_option":  ex.get("packaging_option") or "",
         "datasheet_url":     ex.get("datasheet_url") or "",
         "run_subdir":        str(run_subdir.relative_to(PROJECT_ROOT)).replace("\\", "/"),
         "error":             (error or "")[:300],
@@ -647,7 +655,7 @@ INDEX_COLUMNS = [
     "warehouse", "warehouse_idx", "ships_from",
     "stockpool_qty", "ship_text", "lead_time_days", "moq",
     "min_break_qty", "price_at_min_qty", "max_break_qty", "price_at_max_qty",
-    "num_price_tiers", "currency", "datasheet_url",
+    "num_price_tiers", "currency", "packaging_option", "datasheet_url",
     "run_subdir", "error",
     # 2 scraper-only extras at the end
     "elapsed_sec", "num_variants",
@@ -1032,6 +1040,17 @@ def main(argv: list[str]) -> int:
                              "drive Opera).")
     parser.add_argument("--env", choices=("test", "prod"), default="test",
                         help="Output root: 'test' → test/scraper/ (default), 'prod' → production/scraper/.")
+    parser.add_argument("--llm-mfr-normalize", dest="llm_mfr_normalize", action="store_true",
+                        default=True,
+                        help="After bom2buy merge, ask Deepseek-v4-pro to classify each "
+                             "manufacturer mismatch (e.g. 'WeEn vs Nexperia') as legitimate "
+                             "equivalence (YES) or real mismatch (NO). Adds llm_mfr_verdict + "
+                             "llm_mfr_reason columns to batch_index.csv and appends a "
+                             "'Legitimate equivalents' sub-section to batch_summary.md. "
+                             "Default ON. Skipped automatically if deepseek_api_key absent in "
+                             "api/.env. Cost ≈ $0.01 / batch.")
+    parser.add_argument("--no-llm-mfr-normalize", dest="llm_mfr_normalize", action="store_false",
+                        help="Skip the LLM-based manufacturer-mismatch classification.")
     args = parser.parse_args(argv[1:])
 
     channels_used = _parse_only(args.only)
@@ -1254,11 +1273,29 @@ def main(argv: list[str]) -> int:
             else:
                 print("[bom2buy] _merge_bom2buy_into_batch.py not found — batch_index.csv has no bom2buy rows")
 
-    # Refresh scraper/README.md status block so bare-shell runs (no Claude Code
-    # session, hence no PostToolUse hook) also keep the doc current. Best-
-    # effort: never block on it.
+    # ─────────── LLM manufacturer-mismatch normalization (default ON) ─────
+    # Asks Deepseek-v4-pro to decide whether each `mfr_match=False` row is a
+    # legitimate equivalence (acquisition / sub-brand / abbreviation / language
+    # variant / reseller-name) or a real mismatch. Adds llm_mfr_verdict +
+    # llm_mfr_reason columns to batch_index.csv/.xlsx and appends a sub-section
+    # to batch_summary.md. Never blocks the batch — degrades to a printed
+    # warning if the API key is absent or the call fails.
+    if args.llm_mfr_normalize:
+        try:
+            sys.path.insert(0, str(PROJECT_ROOT / "common"))
+            from _llm_mfr_normalize import apply_to_batch_index as _llm_normalize
+            _llm_normalize(batch_dir)
+        except Exception as e:
+            print(f"[llm_mfr_normalize] step crashed: {str(e)[:200]} — batch otherwise complete")
+
+    # Refresh scraper/README.md status block — PROD runs only. The README's
+    # AUTO:status block is a production-facing snapshot, so test/dev batches
+    # must not overwrite it. _update_readme_status.py scans production/scraper/
+    # and no-ops when no prod batch exists yet. Best-effort: never block on it.
+    # (The PostToolUse hook still fires this script on scraper-script edits, but
+    # it inherits the same prod-only scan + no-op-when-empty behaviour.)
     regen = PROJECT_ROOT / "scraper" / "scripts" / "_update_readme_status.py"
-    if regen.exists():
+    if args.env == "prod" and regen.exists():
         try:
             subprocess.run(
                 [sys.executable, str(regen)],

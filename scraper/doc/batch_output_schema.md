@@ -1,6 +1,6 @@
 ﻿# Scraper batch output schema
 
-> **v2 schema as of 2026-05-19** — warehouse-exploded. Mirrors `api/doc/batch_output_schema.md` for the first 24 columns so the two tracks' `batch_index.csv` files share a column reference and can be `UNION ALL`'d. See [Version history](#version-history) for the v1 → v2 change.
+> **v2.2 schema as of 2026-05-27** — warehouse-exploded, 29 columns. The first 25 columns (incl. `packaging_option`) mirror `api/doc/batch_output_schema.md` so the two tracks' `batch_index.csv` files share a column reference and can be `UNION ALL`'d. Scraper-only extras: `elapsed_sec`, `num_variants`, `llm_mfr_verdict`, `llm_mfr_reason`. See [Version history](#version-history) for the v1 → v2.2 evolution.
 
 This is the data contract for `batch_scraper_test.py` outputs. Any downstream tool (or future Claude session) parsing files under `test/scraper/BatchTest_<YYYYMMDD>_<HH_MM_SS>/` should rely on the column names and value rules below, not on column order.
 
@@ -64,11 +64,14 @@ Granularity: **one row per `(input_mpn × source × warehouse)`**. When a chip i
 | 19 | `price_at_max_qty` | float | yes | Unit price at `max_break_qty` (typically the cheapest tier). |
 | 20 | `num_price_tiers` | int | no | Total tier count for the cell's price list (0 when no prices). |
 | 21 | `currency` | str | yes | Currency for the price tiers. LCSC implicit `CNY` (set explicitly when `unit_price_cny` is populated). RSONLINE / ICKEY / ONEYAC: `CNY`. Future: `SGD` (APAC site). Digikey: empty (Digikey tier dicts omit a currency code — treat as USD on `.com`, CNY on `.cn`). HQEW: empty (云价格 is CNY by convention). |
-| 22 | `datasheet_url` | str | yes | Direct PDF URL when the source exposes one. May be relative for HQEW/LCSC. Repeated across warehouse rows. |
-| 23 | `run_subdir` | str | no | Forward-slash relative path from PROJECT_ROOT to the per-MPN-per-source folder. Use to load `<safe_mpn>.json` for full detail. |
-| 24 | `error` | str | yes | Truncated error message (≤300 chars). For `blocked`: blocker name (e.g. `cloudflare_just_a_moment`). For `exception`: `TypeName: message`. Empty on ok / no_results. |
-| 25 | `elapsed_sec` | float | yes | Wallclock seconds for the subprocess call. Scraper-only extra (no API counterpart). Repeated across warehouse rows. Empty when row was reloaded via `--resume`. |
-| 26 | `num_variants` | int | no | Number of MPN variants the source returned (≥1 when ok; 0 on `no_results`). For LCSC/Future this counts variant subfolders; for HQEW it counts MPN variants inside `extracted.variants`; for single-listing sources it is 1 when ok. Scraper-only extra. |
+| 22 | `packaging_option` | str | yes | Cross-source canonical shipping / break form (`Tape & Reel` / `Cut Tape` / `Tray` / `Tube` / `Reel` / `编带` / `管装` / `散料` / `Bulk` / `Ammo Pack` / `Each` / etc.). **Original site wording, never translated.** Populated by LCSC / Digikey / Future / Rochester at the cell level; populated PER-WAREHOUSE-ROW by bom2buy (each distributor ships in a different form). Empty for HQEW / ONEYAC / ICKEY / RSONLINE (source does not publish a shipping form). Position mirrors the API track. |
+| 23 | `datasheet_url` | str | yes | Direct PDF URL when the source exposes one. May be relative for HQEW/LCSC. Repeated across warehouse rows. |
+| 24 | `run_subdir` | str | no | Forward-slash relative path from PROJECT_ROOT to the per-MPN-per-source folder. Use to load `<safe_mpn>.json` for full detail. |
+| 25 | `error` | str | yes | Truncated error message (≤300 chars). For `blocked`: blocker name (e.g. `cloudflare_just_a_moment`). For `exception`: `TypeName: message`. Empty on ok / no_results. |
+| 26 | `llm_mfr_verdict` | str | yes | Deepseek-v4-pro verdict on the `(expected_mfr, returned_mfr)` pair when `mfr_match=False` AND `status=ok`. One of `YES` (legitimate equivalence — acquisitions / sub-brands / abbreviations / language variants), `NO` (real mismatch), `WEAK_YES` (model used speculative wording like "likely" / "probably"), `UNCERTAIN`. Empty when `mfr_match=True`, `status!=ok`, or LLM step was skipped. Added by `common/_llm_mfr_normalize.py` after the bom2buy merge. |
+| 27 | `llm_mfr_reason` | str | yes | Short free-text justification from the LLM (≤80 chars). Empty when `llm_mfr_verdict` is empty. |
+| 28 | `elapsed_sec` | float | yes | Wallclock seconds for the subprocess call. Scraper-only extra (no API counterpart). Repeated across warehouse rows. Empty when row was reloaded via `--resume`. |
+| 29 | `num_variants` | int | no | Number of MPN variants the source returned (≥1 when ok; 0 on `no_results`). For LCSC/Future this counts variant subfolders; for HQEW it counts MPN variants inside `extracted.variants`; for single-listing sources it is 1 when ok. Scraper-only extra. |
 
 ### Status values
 
@@ -264,5 +267,7 @@ common  = pd.concat([scraper.drop(columns=["elapsed_sec", "num_variants"]), api]
 |---|---|---|
 | v1 | 2026-05-17 | Per `(MPN × channel)`, 20 columns. Field names `channel`, `price_at_qty_1`, `lowest_unit_price`, `stock_now_qty`, `stock_future_qty`, `stock_future_ship_text`. Wide-form `batch_compare.csv` / `.xlsx` also emitted. |
 | **v2** | **2026-05-19** | Warehouse-exploded per `(MPN × source × warehouse)`, 26 columns (24 API-aligned + 2 scraper extras `elapsed_sec` / `num_variants`). Renamed `channel` → `source`. New columns `vendor_sku`, `warehouse`, `warehouse_idx`, `ships_from`, `stockpool_qty`, `ship_text`, `lead_time_days`, `moq`, `max_break_qty`. Renamed `price_at_qty_1` → `price_at_min_qty`, `lowest_unit_price` → `price_at_max_qty`. **`batch_compare.csv` / `.xlsx` removed.** |
+| **v2.1** | **2026-05-27** | +1 column: `packaging_option` (col 22, between `currency` and `datasheet_url`). Mirrors API track position. Original site wording preserved; never translated. Per-warehouse for bom2buy, cell-level for the other 4 working sources. |
+| **v2.2** | **2026-05-27** | +2 columns: `llm_mfr_verdict` + `llm_mfr_reason` (cols 26-27, between `error` and `elapsed_sec`). Populated by `common/_llm_mfr_normalize.py` post-bom2buy-merge: Deepseek-v4-pro classifies each `mfr_match=False` row as legitimate equivalence (`YES` / `WEAK_YES`) or real mismatch (`NO`). Skipped silently if `deepseek_api_key` absent. **Total: 29 columns.** |
 
 v1 batch folders on disk (e.g. `BatchTest_20260518_19_58_04/`) are not retroactively rewritten. Tools that consume both must handle the version by inspecting the CSV header.

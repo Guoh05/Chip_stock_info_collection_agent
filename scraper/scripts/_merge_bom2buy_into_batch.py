@@ -34,7 +34,7 @@ INDEX_COLUMNS = [
     "warehouse", "warehouse_idx", "ships_from",
     "stockpool_qty", "ship_text", "lead_time_days", "moq",
     "min_break_qty", "price_at_min_qty", "max_break_qty", "price_at_max_qty",
-    "num_price_tiers", "currency", "datasheet_url",
+    "num_price_tiers", "currency", "packaging_option", "datasheet_url",
     "run_subdir", "error",
     "elapsed_sec", "num_variants",
 ]
@@ -168,6 +168,7 @@ def _make_bom2buy_rows(record: dict, batch_dir: Path) -> list[dict]:
             "stockpool_qty": "", "ship_text": "", "lead_time_days": "", "moq": "",
             "min_break_qty": "", "price_at_min_qty": "",
             "max_break_qty": "", "price_at_max_qty": "", "num_price_tiers": 0,
+            "packaging_option": "",
         }]
 
     rows = []
@@ -189,6 +190,9 @@ def _make_bom2buy_rows(record: dict, batch_dir: Path) -> list[dict]:
             "max_break_qty": ps["max_break_qty"] if ps["max_break_qty"] is not None else "",
             "price_at_max_qty": ps["price_at_max_qty"] if ps["price_at_max_qty"] is not None else "",
             "num_price_tiers": ps["num_price_tiers"],
+            # Per-distributor shipping form ("Tray" / "Tape & Reel" / "Cut Tape" / "卷盘" …)
+            # — bom2buy's `.td-stock` text tail propagated through stock_breakdown[i].
+            "packaging_option": d.get("packaging_option") or "",
         })
     return rows
 

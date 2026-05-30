@@ -28,6 +28,7 @@ KEY_FIELDS_ORDER = [
     ("description_intro_cn", "Features (中文)"),
     # Classification
     ("package", "Package"),
+    ("packaging_option", "Packaging option (运输形态)"),  # unified cross-source field — original site wording
     ("shipping_packaging", "Shipping packaging (运输形态)"),
     ("package_qty_line", "Package Qty (per shipping pack)"),
     ("product_arrange", "Packaging form (产品形态)"),

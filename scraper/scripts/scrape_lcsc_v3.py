@@ -398,6 +398,7 @@ def normalize(pp: dict, item_id: str, item_url: str, right_panel: dict | None = 
         "has_stock_now": pr.get("hasStockNow") == "yes",
         "is_normally_stocking": pr.get("productStockStatus") == "yes",
         "product_arrange": pr.get("productArrange"),  # 编带 / 管装 / 散料
+        "packaging_option": pr.get("productArrange"),  # unified cross-source field — original site wording preserved (no English translation)
         "min_buy_number": pr.get("minBuyNumber"),
         "min_whole_number": pr.get("minWholeNumber"),
         "min_packet_unit": pr.get("productMinEncapsulationUnit"),

@@ -608,6 +608,7 @@ def normalize_variant(v: dict) -> dict:
         "description_en": raw.get("description") or attrs.get("Description"),
         "package": raw.get("package_style") or attrs.get("Package Style"),
         "shipping_packaging": raw.get("shipping_packaging"),
+        "packaging_option": raw.get("shipping_packaging"),  # unified cross-source field — Future label verbatim ("Tray" / "Reel" / "Tube")
         "package_qty_line": raw.get("package_qty_line"),
         "part_status": raw.get("part_status") or attrs.get("Part Status"),
         "date_code": raw.get("date_code") or attrs.get("Date Code"),
